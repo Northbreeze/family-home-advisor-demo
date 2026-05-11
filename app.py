@@ -37,7 +37,7 @@ def get_app_mode() -> str:
     try:
         return str(st.secrets.get("APP_MODE", "local")).lower()
     except Exception:
-        return "local"
+        return "demo"
 
 
 APP_MODE = get_app_mode()
