@@ -35,7 +35,7 @@ def get_app_mode() -> str:
     if env_mode:
         return env_mode.lower()
     try:
-        return str(st.secrets.get("APP_MODE", "local")).lower()
+        return str(st.secrets.get("APP_MODE", "demo")).lower()
     except Exception:
         return "demo"
 
