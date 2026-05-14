@@ -118,6 +118,10 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "bc_assessment_year": float("nan"),
         "bc_assessment_status": "Not available",
         "BC Assessment Search Link": "",
+        "noise_model_risk": "",
+        "noise_override_note": "",
+        "noise_context_note": "",
+        "noise_verification_needed": False,
     }
 
     if "Price" not in data.columns and "_price_numeric" in data.columns:

@@ -18,9 +18,15 @@ DISPLAY_COLUMNS = [
     "final_school",
     "final_fraser_score",
     "noise_risk",
+    "noise_model_risk",
+    "noise_override_note",
+    "noise_context_note",
+    "noise_verification_needed",
     "open_house_status",
     "match_score",
     "buyer_fit_flags",
+    "location_component",
+    "location_flags",
     "condition_component",
     "condition_flags",
     "explanation",
@@ -43,6 +49,47 @@ def text_signal_score(text: pd.Series, keywords: list[str], strong_keywords: lis
     for keyword in strong_keywords or []:
         score = score.mask(lowered.str.contains(keyword, regex=False), 100)
     return score
+
+
+def location_score(text: pd.Series) -> pd.Series:
+    lowered = text.fillna("").astype(str).str.lower()
+    score = pd.Series(35, index=text.index, dtype=float)
+    good_location_terms = [
+        "edgemont village",
+        "lynn valley",
+        "dundarave",
+        "ambleside",
+        "caulfeild village",
+        "horseshoe bay",
+        "deep cove",
+        "central lonsdale",
+        "lower lonsdale",
+        "walkable",
+        "walking distance",
+        "steps to",
+        "near parks",
+        "close to parks",
+        "family-friendly neighborhood",
+        "family friendly neighborhood",
+        "quiet street",
+        "cul-de-sac",
+        "no-through",
+    ]
+    premium_terms = ["edgemont village", "dundarave", "ambleside", "caulfeild village", "lynn valley"]
+    for term in good_location_terms:
+        score = score.mask(lowered.str.contains(term, regex=False), 70)
+    for term in premium_terms:
+        score = score.mask(lowered.str.contains(term, regex=False), 95)
+    return score
+
+
+def location_flags(text: str) -> str:
+    lowered = str(text).lower()
+    flags = []
+    for term in ["edgemont village", "lynn valley", "dundarave", "ambleside", "caulfeild village", "quiet street", "cul-de-sac", "walking distance"]:
+        if term in lowered:
+            flags.append(term)
+    return "; ".join(flags) if flags else "location quality not highlighted"
 
 
 def minmax_score(series: pd.Series, higher_is_better: bool = True) -> pd.Series:
@@ -98,12 +145,15 @@ def add_lifestyle_components(data: pd.DataFrame) -> pd.DataFrame:
         ["functional layout", "family room", "main floor", "renovated", "updated"],
         ["open concept", "great layout", "ideal family layout"],
     )
+    out["location_component"] = location_score(combined)
+    out["location_flags"] = combined.map(location_flags)
     out["condition_component"] = condition_score(combined)
     out["lifestyle_component"] = (
-        out["rancher_component"] * 0.25
+        out["rancher_component"] * 0.20
         + out["backyard_component"] * 0.35
         + out["mortgage_helper_component"] * 0.15
-        + out["layout_component"] * 0.15
+        + out["layout_component"] * 0.10
+        + out["location_component"] * 0.10
         + out["condition_component"] * 0.10
     ).round(1)
     out["buyer_fit_flags"] = out.apply(build_fit_flags, axis=1)
@@ -161,6 +211,8 @@ def build_fit_flags(row: pd.Series) -> str:
         flags.append("mortgage-helper signal")
     if row.get("layout_component", 0) >= 65:
         flags.append("layout signal")
+    if row.get("location_component", 0) >= 70:
+        flags.append("location signal")
     if row.get("condition_component", 60) <= 30:
         flags.append("condition/age caution")
     return "; ".join(flags) if flags else "verify layout/backyard manually"
@@ -248,6 +300,10 @@ def build_explanation(row: pd.Series) -> str:
         cautions.append(f"{row.get('noise_risk')} noise risk")
     else:
         cautions.append("noise needs verification")
+    if str(row.get("noise_override_note", "")).strip():
+        cautions.append("noise manually adjusted; verify at showing")
+    elif str(row.get("noise_context_note", "")).strip():
+        cautions.append("noise adjusted by context; verify at showing")
 
     if row.get("open_house_status") == "Upcoming":
         positives.append("upcoming open house")
@@ -260,6 +316,8 @@ def build_explanation(row: pd.Series) -> str:
         positives.append("strong size/bedroom fit")
     if row.get("lifestyle_component", 0) >= 65:
         positives.append(row.get("buyer_fit_flags", "strong lifestyle fit"))
+    elif row.get("location_component", 0) >= 90:
+        positives.append(row.get("location_flags", "strong location"))
     if row.get("condition_component", 60) <= 30:
         cautions.append(row.get("condition_flags", "condition needs review"))
 
