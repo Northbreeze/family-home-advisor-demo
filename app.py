@@ -35,13 +35,13 @@ def get_app_mode() -> str:
     if env_mode:
         return env_mode.lower()
     try:
-        return str(st.secrets.get("APP_MODE", "local")).lower()
+        return str(st.secrets.get("APP_MODE", "demo")).lower()
     except Exception:
-        return "local"
+        return "demo"
 
 
 APP_MODE = get_app_mode()
-DEMO_MODE = APP_MODE in {"demo", "static", "deployed"}
+DEMO_MODE = True
 
 
 @st.cache_data(show_spinner=False)
