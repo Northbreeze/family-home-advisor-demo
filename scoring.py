@@ -22,6 +22,8 @@ DISPLAY_COLUMNS = [
     "noise_override_note",
     "noise_context_note",
     "noise_verification_needed",
+    "distance_to_highway_m",
+    "distance_to_major_road_m",
     "open_house_status",
     "match_score",
     "buyer_fit_flags",

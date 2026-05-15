@@ -122,6 +122,8 @@ def normalize_columns(df: pd.DataFrame) -> tuple[pd.DataFrame, list[str]]:
         "noise_override_note": "",
         "noise_context_note": "",
         "noise_verification_needed": False,
+        "distance_to_highway_m": float("nan"),
+        "distance_to_major_road_m": float("nan"),
     }
 
     if "Price" not in data.columns and "_price_numeric" in data.columns:
