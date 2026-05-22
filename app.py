@@ -99,7 +99,7 @@ def safe_int(value: object, default: int = 0) -> int:
     return int(number)
 
 def review_marker_color(row: pd.Series) -> str:
-    status = str(row.get("client_status", "New"))
+    status = str(row.get("client_status", "Unreviewed"))
     if status in STATUS_COLORS:
         return STATUS_COLORS[status]
     return marker_color(row)
@@ -118,7 +118,7 @@ def make_map(df: pd.DataFrame, enable_draw: bool = False) -> folium.Map | None:
         new_badge = "<br><b>New since last refresh</b>" if bool(row.get("is_new_since_last_refresh", False)) else ""
         popup_html = f"""
         <b>{row.get('Address', '')}</b><br>
-        Status: {row.get('client_status', 'New')}<br>
+        Review status: {row.get('client_status', 'Unreviewed')}<br>
         Score: {row.get('match_score', 0)}<br>
         Bucket: {row.get('recommendation_bucket', 'Review')}<br>
         Area: {row.get('detected_area', 'Unknown')}<br>
@@ -269,7 +269,7 @@ def add_new_since_last_refresh(df: pd.DataFrame, root: Path) -> pd.DataFrame:
 
 
 def listing_label(row: pd.Series) -> str:
-    return f"{row.get('match_score', 0):.1f} | {row.get('client_status', 'New')} | {row.get('Address', '')}"
+    return f"{row.get('match_score', 0):.1f} | {row.get('client_status', 'Unreviewed')} | {row.get('Address', '')}"
 
 
 def needs_ai_photo_score(row: pd.Series) -> bool:
@@ -523,8 +523,8 @@ def render_review_form(row: pd.Series) -> None:
     with st.form("manual_review_form"):
         status = st.selectbox(
             "Client status",
-            ["New", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"],
-            index=["New", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"].index(str(row.get("client_status", "New")) if str(row.get("client_status", "New")) in ["New", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"] else "New"),
+            ["Unreviewed", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"],
+            index=["Unreviewed", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"].index(str(row.get("client_status", "Unreviewed")) if str(row.get("client_status", "Unreviewed")) in ["Unreviewed", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"] else "Unreviewed"),
         )
         form_cols = st.columns(3)
         with form_cols[0]:
@@ -605,9 +605,10 @@ def main() -> None:
     radius_km = st.sidebar.slider("Landmark radius (km)", 0.5, 5.0, 2.0, 0.25)
     status_filter = st.sidebar.multiselect(
         "Client status",
-        ["New", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"],
-        default=["New", "Liked", "Needs Review", "Offered"],
+        ["Unreviewed", "Liked", "Needs Review", "Offered", "Disliked", "Rejected"],
+        default=["Unreviewed", "Liked", "Needs Review", "Offered"],
     )
+    st.sidebar.caption("Unreviewed means not reviewed by us yet. It does not mean new to market. Use New since last refresh for newly appeared listings.")
     show_new_only = st.sidebar.checkbox("New since last refresh only", value=False)
     use_drawn_area = st.sidebar.checkbox("Filter by area drawn on map", value=False)
     if use_drawn_area:

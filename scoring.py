@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from io import BytesIO
 from typing import Any
@@ -499,7 +499,7 @@ def add_decision_fields(data: pd.DataFrame) -> pd.DataFrame:
 
 
 def recommendation_bucket(row: pd.Series) -> str:
-    status = str(row.get("client_status", "New"))
+    status = str(row.get("client_status", "Unreviewed"))
     if status in {"Offered", "Liked"}:
         return "Client Liked / Offered"
     if status in {"Rejected", "Disliked"}:

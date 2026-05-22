@@ -29,7 +29,7 @@ REVIEW_COLUMNS = [
 ]
 
 DEFAULT_REVIEW_VALUES = {
-    "client_status": "New",
+    "client_status": "Unreviewed",
     "noise_verified": "Unknown",
     "yard_playability": "Unknown",
     "yard_noise": "Unknown",
@@ -59,6 +59,7 @@ def load_reviews(path: Path) -> pd.DataFrame:
     for column in REVIEW_COLUMNS:
         if column not in reviews.columns:
             reviews[column] = DEFAULT_REVIEW_VALUES.get(column, "")
+    reviews["client_status"] = reviews["client_status"].replace({"New": "Unreviewed"})
     reviews["review_key"] = reviews["Address"].map(review_key)
     return reviews[REVIEW_COLUMNS + ["review_key"]]
 
@@ -113,7 +114,8 @@ def upsert_review(path: Path, address: str, values: dict[str, Any]) -> None:
     row.update(DEFAULT_REVIEW_VALUES)
     row.update(values)
     if "review_key" not in reviews.columns:
-        reviews["review_key"] = reviews["Address"].map(review_key)
+        reviews["client_status"] = reviews["client_status"].replace({"New": "Unreviewed"})
+    reviews["review_key"] = reviews["Address"].map(review_key)
     reviews = reviews[reviews["review_key"] != key]
     updated = pd.concat([reviews.drop(columns=["review_key"], errors="ignore"), pd.DataFrame([row])], ignore_index=True)
     save_reviews(path, updated)
