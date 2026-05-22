@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from datetime import datetime
 import os
@@ -74,6 +74,9 @@ def get_app_mode() -> str:
             return str(st.secrets.get("APP_MODE", "local")).lower()
         except Exception:
             return "local"
+    # Streamlit Cloud runs on Linux and should use the packaged workbook, not the local refresh pipeline.
+    if os.name != "nt":
+        return "demo"
     return "local"
 
 
@@ -842,4 +845,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as exc:
+        st.error("The app hit an error while loading. The details below are shown so we can fix the deployed version quickly.")
+        st.exception(exc)
