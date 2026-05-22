@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from io import BytesIO
 from typing import Any
@@ -15,6 +15,8 @@ DISPLAY_COLUMNS = [
     "Bathrooms",
     "Size",
     "price_per_sqft",
+    "listing_change_status",
+    "is_new_since_last_refresh",
     "final_school",
     "final_fraser_score",
     "noise_risk",
@@ -24,8 +26,33 @@ DISPLAY_COLUMNS = [
     "noise_verification_needed",
     "distance_to_highway_m",
     "distance_to_major_road_m",
+    "client_status",
+    "yard_playability",
+    "yard_noise",
+    "layout_fit",
+    "photo_review_status",
+    "photo_yard_playability",
+    "photo_yard_type",
+    "photo_flatness",
+    "photo_fenced",
+    "photo_privacy",
+    "ai_yard_score",
+    "ai_layout_score",
+    "ai_privacy_score",
+    "ai_fence_score",
+    "ai_slope_score",
+    "ai_noise_clue_score",
+    "ai_photo_url_count",
     "open_house_status",
     "match_score",
+    "recommendation_bucket",
+    "final_verdict",
+    "verification_checklist",
+    "assessment_price_delta",
+    "assessment_price_ratio",
+    "land_value_share",
+    "building_value_share",
+    "assessment_interpretation",
     "buyer_fit_flags",
     "location_component",
     "location_flags",
@@ -144,7 +171,7 @@ def add_lifestyle_components(data: pd.DataFrame) -> pd.DataFrame:
     )
     out["layout_component"] = text_signal_score(
         combined,
-        ["functional layout", "family room", "main floor", "renovated", "updated"],
+        ["functional layout", "family room", "main floor", "renovated", "updated", "rec room", "playroom", "bedrooms upstairs"],
         ["open concept", "great layout", "ideal family layout"],
     )
     out["location_component"] = location_score(combined)
@@ -160,8 +187,89 @@ def add_lifestyle_components(data: pd.DataFrame) -> pd.DataFrame:
     ).round(1)
     out["buyer_fit_flags"] = out.apply(build_fit_flags, axis=1)
     out["condition_flags"] = combined.map(condition_flags)
+    out = apply_review_overrides(out)
     return out
 
+
+def apply_review_overrides(data: pd.DataFrame) -> pd.DataFrame:
+    out = data.copy()
+    if "noise_verified" in out.columns:
+        verified = out["noise_verified"].astype(str).str.title()
+        valid_noise = verified.isin(["Low", "Medium", "High"])
+        out.loc[valid_noise, "noise_model_risk"] = out.loc[valid_noise, "noise_risk"]
+        out.loc[valid_noise, "noise_risk"] = verified[valid_noise]
+        out.loc[valid_noise, "noise_override_note"] = "Human-reviewed noise override."
+        out.loc[valid_noise, "noise_verification_needed"] = False
+
+    if "ai_yard_score" in out.columns:
+        ai_reviewed = out.get("photo_review_status", pd.Series("", index=out.index)).astype(str).str.contains("AI", case=False, na=False)
+        yard_score = pd.to_numeric(out["ai_yard_score"], errors="coerce").clip(0, 100)
+        slope_score = pd.to_numeric(out.get("ai_slope_score", pd.Series(50, index=out.index)), errors="coerce").clip(0, 100).fillna(50)
+        fence_score = pd.to_numeric(out.get("ai_fence_score", pd.Series(50, index=out.index)), errors="coerce").clip(0, 100).fillna(50)
+        privacy_score = pd.to_numeric(out.get("ai_privacy_score", pd.Series(50, index=out.index)), errors="coerce").clip(0, 100).fillna(50)
+        photo_yard_component = (yard_score.fillna(50) * 0.55 + slope_score * 0.20 + fence_score * 0.15 + privacy_score * 0.10).round(1)
+        out["ai_photo_yard_component"] = photo_yard_component
+        out.loc[ai_reviewed, "backyard_component"] = out.loc[ai_reviewed, ["backyard_component", "ai_photo_yard_component"]].max(axis=1)
+
+    if "ai_layout_score" in out.columns:
+        ai_reviewed = out.get("photo_review_status", pd.Series("", index=out.index)).astype(str).str.contains("AI", case=False, na=False)
+        layout_score = pd.to_numeric(out["ai_layout_score"], errors="coerce").clip(0, 100)
+        layout_mask = ai_reviewed & layout_score.notna()
+        current_layout = pd.to_numeric(out.loc[layout_mask, "layout_component"], errors="coerce").fillna(0)
+        out.loc[layout_mask, "layout_component"] = current_layout.combine(layout_score.loc[layout_mask], max).astype(float)
+
+    if "photo_yard_playability" in out.columns:
+        photo_yard = out["photo_yard_playability"].astype(str).str.lower()
+        out.loc[photo_yard.eq("great"), "backyard_component"] = 100
+        photo_maybe = photo_yard.eq("maybe")
+        out.loc[photo_maybe, "backyard_component"] = out.loc[photo_maybe, "backyard_component"].clip(lower=65)
+        out.loc[photo_yard.eq("poor"), "backyard_component"] = 0
+
+    if "yard_playability" in out.columns:
+        yard = out["yard_playability"].astype(str).str.lower()
+        out.loc[yard.eq("great"), "backyard_component"] = 100
+        maybe_yard = yard.eq("maybe")
+        out.loc[maybe_yard, "backyard_component"] = out.loc[maybe_yard, "backyard_component"].clip(lower=65)
+        out.loc[yard.eq("poor"), "backyard_component"] = 0
+
+    if "layout_fit" in out.columns:
+        layout = out["layout_fit"].astype(str).str.lower()
+        out.loc[layout.eq("great"), "layout_component"] = 100
+        good_layout = layout.eq("good")
+        out.loc[good_layout, "layout_component"] = out.loc[good_layout, "layout_component"].clip(lower=75)
+        concern_layout = layout.eq("concern")
+        out.loc[concern_layout, "layout_component"] = out.loc[concern_layout, "layout_component"].clip(upper=35)
+
+    if "yard_noise" in out.columns:
+        yard_noise = out["yard_noise"].astype(str).str.title()
+        out.loc[yard_noise.eq("High"), "noise_verification_needed"] = True
+
+    component_columns = [
+        "rancher_component",
+        "backyard_component",
+        "mortgage_helper_component",
+        "layout_component",
+        "location_component",
+        "condition_component",
+    ]
+    for column in component_columns:
+        out[column] = pd.to_numeric(out[column], errors="coerce").fillna(0).astype(float)
+
+    out["lifestyle_component"] = (
+        out["rancher_component"] * 0.15
+        + out["backyard_component"] * 0.35
+        + out["mortgage_helper_component"] * 0.10
+        + out["layout_component"] * 0.15
+        + out["location_component"] * 0.15
+        + out["condition_component"] * 0.10
+    ).astype(float).round(1)
+
+    if "yard_playability" in out.columns:
+        poor_yard = out["yard_playability"].astype(str).str.lower().eq("poor")
+        out.loc[poor_yard, "backyard_component"] = 0
+        out.loc[poor_yard, "lifestyle_component"] = out.loc[poor_yard, "lifestyle_component"].clip(upper=45)
+    out["buyer_fit_flags"] = out.apply(build_fit_flags, axis=1)
+    return out
 
 def condition_score(text: pd.Series) -> pd.Series:
     lowered = text.fillna("").astype(str).str.lower()
@@ -217,6 +325,12 @@ def build_fit_flags(row: pd.Series) -> str:
         flags.append("location signal")
     if row.get("condition_component", 60) <= 30:
         flags.append("condition/age caution")
+    if row.get("client_status") in {"Liked", "Offered"}:
+        flags.append(f"client {str(row.get('client_status')).lower()}")
+    if row.get("yard_noise") == "High":
+        flags.append("yard-noise concern")
+    if row.get("photo_review_status") in {"AI reviewed", "Reviewed"}:
+        flags.append("photo reviewed")
     return "; ".join(flags) if flags else "verify layout/backyard manually"
 
 
@@ -250,6 +364,10 @@ def score_listings(df: pd.DataFrame, prefs: dict[str, Any]) -> pd.DataFrame:
 
     noise_penalty = data["noise_risk"].map(NOISE_PENALTY_MAP).fillna(NOISE_PENALTY_MAP["Unknown"])
     quiet_score = (100 - noise_penalty).clip(0, 100)
+    if "ai_noise_clue_score" in data.columns:
+        ai_reviewed = data.get("photo_review_status", pd.Series("", index=data.index)).astype(str).str.contains("AI", case=False, na=False)
+        ai_quiet = pd.to_numeric(data["ai_noise_clue_score"], errors="coerce").clip(0, 100)
+        quiet_score = quiet_score.where(~(ai_reviewed & ai_quiet.notna()), quiet_score * 0.70 + ai_quiet * 0.30)
 
     school_confidence_bonus = data["school_confidence"].astype(str).str.lower().map(
         lambda value: 4 if "high" in value or "official" in value else 2 if "medium" in value else 0
@@ -274,6 +392,9 @@ def score_listings(df: pd.DataFrame, prefs: dict[str, Any]) -> pd.DataFrame:
     data["quiet_component"] = quiet_score.round(1)
     data["noise_penalty"] = noise_penalty
     data["match_score"] = (weighted + school_confidence_bonus + open_house_bonus - condition_penalty).clip(0, 100).round(1)
+    if "yard_playability" in data.columns:
+        poor_yard = data["yard_playability"].astype(str).str.lower().eq("poor")
+        data.loc[poor_yard, "match_score"] = data.loc[poor_yard, "match_score"].clip(upper=54)
 
     data["excluded_reason"] = ""
     data.loc[data["price_numeric"] > max_price, "excluded_reason"] += "Over max price. "
@@ -283,7 +404,9 @@ def score_listings(df: pd.DataFrame, prefs: dict[str, Any]) -> pd.DataFrame:
         data.loc[data["noise_risk"].eq("High"), "excluded_reason"] += "High noise risk. "
 
     data["included"] = data["excluded_reason"].str.len().eq(0)
+    data = add_assessment_fields(data)
     data["explanation"] = data.apply(build_explanation, axis=1)
+    data = add_decision_fields(data)
     return data.sort_values(["included", "match_score", "price_numeric"], ascending=[False, False, True])
 
 
@@ -329,6 +452,123 @@ def build_explanation(row: pd.Series) -> str:
     return text + "."
 
 
+
+def add_assessment_fields(data: pd.DataFrame) -> pd.DataFrame:
+    out = data.copy()
+    total = pd.to_numeric(out.get("bc_assessment_total_value", pd.Series(index=out.index, dtype=float)), errors="coerce")
+    land = pd.to_numeric(out.get("bc_assessment_land_value", pd.Series(index=out.index, dtype=float)), errors="coerce")
+    building = pd.to_numeric(out.get("bc_assessment_building_value", pd.Series(index=out.index, dtype=float)), errors="coerce")
+    price = pd.to_numeric(out.get("price_numeric", pd.Series(index=out.index, dtype=float)), errors="coerce")
+
+    out["assessment_price_delta"] = (price - total).where(total.notna())
+    out["assessment_price_ratio"] = (price / total).where(total.gt(0)).round(2)
+    out["land_value_share"] = (land / total * 100).where(total.gt(0)).round(1)
+    out["building_value_share"] = (building / total * 100).where(total.gt(0)).round(1)
+    out["assessment_interpretation"] = out.apply(assessment_interpretation, axis=1)
+    return out
+
+
+def assessment_interpretation(row: pd.Series) -> str:
+    ratio = row.get("assessment_price_ratio")
+    land_share = row.get("land_value_share")
+    building_share = row.get("building_value_share")
+    if pd.isna(ratio):
+        return "Assessment not entered; use BC Assessment link or manual value entry."
+
+    parts: list[str] = []
+    if ratio >= 1.25:
+        parts.append("Price is materially above assessment")
+    elif ratio <= 0.95:
+        parts.append("Price is at or below assessment")
+    else:
+        parts.append("Price is close to assessment")
+
+    if pd.notna(land_share) and land_share >= 75:
+        parts.append("value is mostly land")
+    elif pd.notna(building_share) and building_share >= 35:
+        parts.append("building value is meaningful")
+    return "; ".join(parts) + "."
+
+
+def add_decision_fields(data: pd.DataFrame) -> pd.DataFrame:
+    out = data.copy()
+    out["recommendation_bucket"] = out.apply(recommendation_bucket, axis=1)
+    out["verification_checklist"] = out.apply(build_verification_checklist, axis=1)
+    out["final_verdict"] = out.apply(final_verdict, axis=1)
+    return out
+
+
+def recommendation_bucket(row: pd.Series) -> str:
+    status = str(row.get("client_status", "New"))
+    if status in {"Offered", "Liked"}:
+        return "Client Liked / Offered"
+    if status in {"Rejected", "Disliked"}:
+        return "Rejected / Not A Fit"
+
+    if row.get("yard_playability") == "Poor":
+        return "Poor Yard / Not A Fit"
+
+    has_hard_noise_gap = row.get("noise_verification_needed") or row.get("yard_noise") == "High"
+    has_yard_signal = row.get("backyard_component", 0) >= 65 or row.get("yard_playability") == "Great"
+    if row.get("match_score", 0) >= 75 and row.get("noise_risk") == "Low" and not has_hard_noise_gap and has_yard_signal:
+        return "Top Shortlist"
+    if has_hard_noise_gap or row.get("yard_playability") == "Maybe":
+        return "Needs Verification"
+    if row.get("match_score", 0) >= 65:
+        return "Good Candidate"
+    return "Watch / Lower Fit"
+
+
+def build_verification_checklist(row: pd.Series) -> str:
+    checks: list[str] = []
+    if row.get("yard_playability") == "Poor":
+        checks.append("Manual review says no/poor playable yard")
+    elif row.get("yard_playability") in {"Unknown", "Maybe"} and row.get("photo_yard_playability") in {"Unknown", "Maybe", ""}:
+        checks.append("Review photos/showing for flat fenced playable yard")
+    if row.get("yard_noise") in {"Unknown", "High"} and row.get("noise_risk") in {"Medium", "High"}:
+        checks.append("Stand in backyard and verify road/highway noise")
+    elif row.get("noise_verification_needed"):
+        checks.append("Verify real-world noise at showing")
+    if row.get("layout_fit") == "Unknown":
+        checks.append("Confirm bedroom layout, family room flow, and stairs")
+    if pd.isna(row.get("bc_assessment_total_value")):
+        checks.append("Enter BC Assessment land/building values")
+    if row.get("final_school") in {"Unknown", ""} or pd.isna(row.get("final_fraser_score")):
+        checks.append("Verify school catchment")
+    if not checks:
+        checks.append("No major verification gaps recorded")
+    return " | ".join(checks)
+
+
+def final_verdict(row: pd.Series) -> str:
+    bucket = row.get("recommendation_bucket", "Review")
+    positives: list[str] = []
+    concerns: list[str] = []
+
+    if row.get("location_component", 0) >= 90:
+        positives.append("excellent location")
+    if row.get("backyard_component", 0) >= 65:
+        positives.append("yard/playability signal")
+    if row.get("layout_component", 0) >= 65:
+        positives.append("family layout signal")
+    if row.get("size_component", 0) >= 80:
+        positives.append("strong interior size")
+    if row.get("noise_risk") == "High" or row.get("yard_noise") == "High":
+        concerns.append("noise risk")
+    if row.get("yard_playability") == "Poor":
+        concerns.append("manual review says no/poor playable yard")
+    elif row.get("yard_playability") == "Maybe" or (row.get("yard_playability") == "Unknown" and row.get("backyard_component", 0) < 65):
+        concerns.append("yard needs verification")
+    if pd.isna(row.get("bc_assessment_total_value")):
+        concerns.append("assessment missing")
+
+    text = f"{bucket}: "
+    text += ", ".join(positives[:3]) if positives else "worth reviewing"
+    if concerns:
+        text += "; verify " + ", ".join(concerns[:3])
+    return text + "."
+
+
 def marker_color(row: pd.Series) -> str:
     if row.get("noise_risk") == "Unknown" or pd.isna(row.get("match_score")):
         return "gray"
@@ -371,11 +611,11 @@ def scoring_method_df() -> pd.DataFrame:
                 "School confidence bonus",
             ],
             "Description": [
-                "Weighted average of school, price, size, and quiet components, plus transparent bonuses.",
+                "Weighted average of school, price, size, quiet, and yard/layout/location components, plus transparent bonuses and manual review overrides.",
                 "final_fraser_score normalized from 0 to 100.",
-                "Higher when price is below the buyer's max price.",
+                "Combines budget fit, price per sqft, and manually entered BC Assessment comparison when available.",
                 "Blend of bedroom target fit and size fit, capped at 100.",
-                "Rule-based listing-text signals for rancher/main-floor living, private yard/backyard, mortgage helper/suite, and practical layout.",
+                "Rule-based listing-text signals plus AI photo scores for yard, layout, privacy, fencing, slope, and visual noise clues when reviewed.",
                 "Low = 0, Medium = 18, High = 40, Unknown = 12 before quiet weighting.",
                 "+3 points only when open_house_status is Upcoming.",
                 "+4 for high/official confidence, +2 for medium confidence.",
@@ -396,3 +636,5 @@ def export_excel(prefs: dict[str, Any], top: pd.DataFrame, all_filtered: pd.Data
         scoring_method_df().to_excel(writer, sheet_name="Scoring Method", index=False)
 
     return output.getvalue()
+
+
