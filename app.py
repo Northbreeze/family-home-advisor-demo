@@ -600,6 +600,14 @@ def main() -> None:
     source_path = st.sidebar.text_input("Listing workbook", value=str(default_path))
 
     st.sidebar.header("Map Search")
+    market_view_mode = st.sidebar.radio(
+        "Market view mode",
+        ["Recommended matches", "All active listings"],
+        help="Recommended matches applies buyer filters. All active listings shows the full inventory so nothing is hidden by scoring filters.",
+    )
+    show_all_active = market_view_mode == "All active listings"
+    if show_all_active:
+        st.sidebar.info("Showing all active listings. Buyer scoring still appears, but price/bed/school/noise/status filters will not hide homes.")
     preferred_area = st.sidebar.selectbox("Preferred area", ["All"] + sorted(AREA_KEYWORDS.keys()))
     landmark = st.sidebar.selectbox("Around landmark", list(LANDMARKS.keys()))
     radius_km = st.sidebar.slider("Landmark radius (km)", 0.5, 5.0, 2.0, 0.25)
@@ -683,6 +691,7 @@ def main() -> None:
         "preferred_area": preferred_area,
         "landmark": landmark,
         "radius_km": radius_km,
+        "show_all_active": show_all_active,
         "show_new_only": show_new_only,
         "use_drawn_area": use_drawn_area,
         "auto_photo_scoring": auto_photo_scoring,
@@ -694,9 +703,13 @@ def main() -> None:
     new_since_refresh_all = scored[scored["is_new_since_last_refresh"]].copy() if "is_new_since_last_refresh" in scored else scored.iloc[0:0].copy()
     if "match_score" in new_since_refresh_all.columns:
         new_since_refresh_all = new_since_refresh_all.sort_values("match_score", ascending=False)
-    filtered, excluded = filter_by_preferences(scored, prefs)
+    if show_all_active:
+        filtered = scored.copy()
+        excluded = scored.iloc[0:0].copy()
+    else:
+        filtered, excluded = filter_by_preferences(scored, prefs)
     filtered = filter_by_area(filtered, preferred_area, landmark, radius_km)
-    if status_filter:
+    if status_filter and not show_all_active:
         filtered = filtered[filtered["client_status"].isin(status_filter)]
     if show_new_only:
         filtered = filtered[filtered["is_new_since_last_refresh"]]
@@ -730,7 +743,7 @@ def main() -> None:
             st.warning("Some noise risk values are estimated because road GIS/proximity fields were missing.")
 
     metric_cols = st.columns(5)
-    metric_cols[0].metric("Map matches", len(filtered))
+    metric_cols[0].metric("Map listings", len(filtered))
     metric_cols[1].metric("New since refresh", int(scored["is_new_since_last_refresh"].sum()) if "is_new_since_last_refresh" in scored else 0)
     metric_cols[2].metric("Top shortlist", int(filtered["recommendation_bucket"].eq("Top Shortlist").sum()) if "recommendation_bucket" in filtered else 0)
     metric_cols[3].metric("Needs verify", int(scored["recommendation_bucket"].eq("Needs Verification").sum()) if "recommendation_bucket" in scored else 0)
@@ -789,7 +802,7 @@ def main() -> None:
                 st.caption(f"Showing {len(new_since_refresh_all)} newly detected listings.")
             st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
 
-        st.subheader("Top Matches Based on Current Filters")
+        st.subheader("Listings Shown On Map" if show_all_active else "Top Matches Based on Current Filters")
         st.dataframe(display_columns(top), use_container_width=True, hide_index=True)
 
         st.subheader("Recommendation Board")
