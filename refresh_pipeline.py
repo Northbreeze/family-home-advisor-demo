@@ -245,6 +245,129 @@ def fetch_realtor_listings(
     return output_file
 
 
+def normalize_change_text(value: object) -> str:
+    """Normalize listing identity fields for stable refresh-to-refresh comparisons."""
+    if pd.isna(value):
+        return ""
+    return re.sub(r"[^A-Z0-9]+", " ", str(value).upper()).strip()
+
+
+def normalize_change_url(value: object) -> str:
+    if pd.isna(value):
+        return ""
+    text = str(value).strip().lower().split("?")[0].rstrip("/")
+    for prefix in ["https://www.realtor.ca", "http://www.realtor.ca", "https://realtor.ca", "http://realtor.ca"]:
+        text = text.replace(prefix, "")
+    return text
+
+
+def listing_address_key(df: pd.DataFrame) -> pd.Series:
+    if "Address" not in df.columns:
+        return pd.Series("", index=df.index)
+    return df["Address"].map(normalize_change_text)
+
+
+def listing_url_key(df: pd.DataFrame) -> pd.Series:
+    if "Listing URL" in df.columns:
+        return df["Listing URL"].map(normalize_change_url)
+    if "Website" in df.columns:
+        return df["Website"].map(normalize_change_url)
+    return pd.Series("", index=df.index)
+
+
+def listing_mls_key(df: pd.DataFrame) -> pd.Series:
+    if "MLS" not in df.columns:
+        return pd.Series("", index=df.index)
+    return df["MLS"].map(normalize_change_text)
+
+
+def find_previous_listing_file(root: Path, current_file: Path) -> Path | None:
+    files = sorted(root.glob("North_West_Vancouver_Houses_Open_Houses_WORKING_URLS_*.xlsx"), key=lambda path: path.stat().st_mtime)
+    previous = [path for path in files if path.resolve() != current_file.resolve()]
+    return previous[-1] if previous else None
+
+
+def write_listing_change_log(root: Path, current_file: Path, status: Callable[[str], None] = log_default) -> Path:
+    """Write a compact change log so the deployed app does not need old Excel workbooks."""
+    output_path = root / "listing_change_log.csv"
+    current = pd.read_excel(current_file)
+    previous_file = find_previous_listing_file(root, current_file)
+
+    current = current.copy()
+    current["_address_key"] = listing_address_key(current)
+    current["_url_key"] = listing_url_key(current)
+    current["_mls_key"] = listing_mls_key(current)
+    current["_price_numeric"] = pd.to_numeric(clean_price(current["Price"] if "Price" in current.columns else pd.Series(index=current.index, dtype=object)), errors="coerce")
+
+    rows: list[dict[str, object]] = []
+    if previous_file is None:
+        status("No previous listing workbook found; writing empty listing_change_log.csv.")
+        pd.DataFrame(rows).to_csv(output_path, index=False)
+        return output_path
+
+    previous = pd.read_excel(previous_file).copy()
+    previous["_address_key"] = listing_address_key(previous)
+    previous["_url_key"] = listing_url_key(previous)
+    previous["_mls_key"] = listing_mls_key(previous)
+    previous["_price_numeric"] = pd.to_numeric(clean_price(previous["Price"] if "Price" in previous.columns else pd.Series(index=previous.index, dtype=object)), errors="coerce")
+    previous_by_address = previous.drop_duplicates("_address_key", keep="last").set_index("_address_key", drop=False)
+    previous_urls = set(previous["_url_key"].dropna().astype(str))
+    previous_urls.discard("")
+    previous_mls = set(previous["_mls_key"].dropna().astype(str))
+    previous_mls.discard("")
+
+    for _, row in current.iterrows():
+        address_key_value = row.get("_address_key", "")
+        url_key_value = str(row.get("_url_key", "") or "")
+        mls_key_value = str(row.get("_mls_key", "") or "")
+        previous_row = previous_by_address.loc[address_key_value] if address_key_value in previous_by_address.index else None
+        same_listing_identity = (url_key_value and url_key_value in previous_urls) or (mls_key_value and mls_key_value in previous_mls)
+
+        change_type = "Existing"
+        previous_price = pd.NA
+        previous_mls = ""
+        previous_url = ""
+        price_delta = pd.NA
+        if previous_row is None:
+            change_type = "New Address"
+        else:
+            previous_price = previous_row.get("_price_numeric", pd.NA)
+            previous_mls = previous_row.get("MLS", "")
+            previous_url = previous_row.get("Listing URL", previous_row.get("Website", ""))
+            current_price = row.get("_price_numeric", pd.NA)
+            price_changed = pd.notna(current_price) and pd.notna(previous_price) and float(current_price) != float(previous_price)
+            identity_changed = not same_listing_identity
+            if identity_changed and price_changed:
+                change_type = "Relisted / Price Changed"
+            elif identity_changed:
+                change_type = "Relisted / Changed"
+            elif price_changed:
+                change_type = "Price Changed"
+            if price_changed:
+                price_delta = float(current_price) - float(previous_price)
+
+        if change_type == "Existing":
+            continue
+
+        rows.append({
+            "Address": row.get("Address", ""),
+            "City": row.get("City", ""),
+            "Current Price": row.get("Price", ""),
+            "Previous Price": previous_price,
+            "Price Delta": price_delta,
+            "Current MLS": row.get("MLS", ""),
+            "Previous MLS": previous_mls,
+            "Current Listing URL": row.get("Listing URL", row.get("Website", "")),
+            "Previous Listing URL": previous_url,
+            "Change Type": change_type,
+            "Current Workbook": current_file.name,
+            "Previous Workbook": previous_file.name,
+        })
+
+    change_log = pd.DataFrame(rows)
+    change_log.to_csv(output_path, index=False)
+    status(f"Saved listing change log: {output_path.name} ({len(change_log)} changed listing(s)).")
+    return output_path
 def load_manual_listings(root: Path, status: Callable[[str], None] = log_default) -> pd.DataFrame:
     """Load manually confirmed listings that the automated Realtor.ca pull missed."""
     manual_file = root / MANUAL_LISTINGS_FILE
@@ -701,6 +824,7 @@ def refresh_family_home_advisor(
     else:
         listings_file = fetch_realtor_listings(root, TARGET_CITIES, max_price, open_houses_only, status)
     listings_file = append_manual_listings(listings_file, root, status)
+    write_listing_change_log(root, listings_file, status)
 
     # Enrichment order matters: later ranking fields depend on schools, numeric
     # values, noise categories, and assessment placeholders all being present.

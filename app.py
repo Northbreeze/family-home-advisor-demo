@@ -254,27 +254,30 @@ def add_new_since_last_refresh(df: pd.DataFrame, root: Path) -> pd.DataFrame:
     data["is_new_since_last_refresh"] = False
     data["listing_change_status"] = "Existing"
 
-    def apply_reference_file() -> pd.Series:
-        reference_path = root / "new_listings_since_last_refresh.csv"
-        if not reference_path.exists():
+    def apply_change_log() -> pd.Series:
+        change_path = root / "listing_change_log.csv"
+        if not change_path.exists():
             return pd.Series(False, index=data.index)
         try:
-            reference = pd.read_csv(reference_path)
+            changes = pd.read_csv(change_path)
         except Exception:
+            return pd.Series(False, index=data.index)
+        if changes.empty:
             return pd.Series(False, index=data.index)
 
         ref_urls = set()
-        for column in ["Listing URL", "Website"]:
-            if column in reference.columns:
-                ref_urls.update(normalize_listing_url_key(reference[column]).dropna().astype(str))
+        for column in ["Current Listing URL", "Listing URL", "Website"]:
+            if column in changes.columns:
+                ref_urls.update(normalize_listing_url_key(changes[column]).dropna().astype(str))
         ref_urls = {value for value in ref_urls if value and value.lower() not in {"nan", "none"}}
 
         ref_mls = set()
-        if "MLS" in reference.columns:
-            ref_mls = set(reference["MLS"].fillna("").astype(str).str.upper().str.strip())
-            ref_mls = {value for value in ref_mls if value and value not in {"NAN", "NONE"}}
+        for column in ["Current MLS", "MLS"]:
+            if column in changes.columns:
+                ref_mls.update(changes[column].fillna("").astype(str).str.upper().str.strip())
+        ref_mls = {value for value in ref_mls if value and value not in {"NAN", "NONE"}}
 
-        ref_addresses = set(address_key(reference).dropna().astype(str)) if "Address" in reference.columns else set()
+        ref_addresses = set(address_key(changes).dropna().astype(str)) if "Address" in changes.columns else set()
         ref_addresses = {value for value in ref_addresses if len(value) > 8}
 
         mask = pd.Series(False, index=data.index)
@@ -286,21 +289,30 @@ def add_new_since_last_refresh(df: pd.DataFrame, root: Path) -> pd.DataFrame:
             mask = mask | current_mls.isin(ref_mls)
         if ref_addresses and "Address" in data.columns:
             mask = mask | address_key(data).isin(ref_addresses)
+
+        if "Change Type" in changes.columns:
+            change_by_address = changes.drop_duplicates("Address", keep="last").set_index(address_key(changes))["Change Type"].to_dict() if "Address" in changes.columns else {}
+            if change_by_address and "Address" in data.columns:
+                mapped_status = address_key(data).map(change_by_address)
+                data.loc[mapped_status.notna(), "listing_change_status"] = mapped_status[mapped_status.notna()]
         return mask
 
-    files = sorted(root.glob("North_West_Vancouver_Houses_Open_Houses_WORKING_URLS_*.xlsx"), key=lambda path: path.stat().st_mtime)
-    is_new = apply_reference_file()
+    is_new = apply_change_log()
 
-    if len(files) >= 2:
-        previous = pd.read_excel(files[-2])
-        key_type = shared_listing_key_type(data, previous)
-        previous_keys = set(listing_identity_key(previous, key_type).dropna().astype(str))
-        current_keys = listing_identity_key(data, key_type).astype(str)
-        valid_keys = current_keys.str.len().gt(5)
-        is_new = is_new | (valid_keys & ~current_keys.isin(previous_keys))
+    # Local fallback for development: compare dated workbooks when the change log is absent.
+    if not is_new.any():
+        files = sorted(root.glob("North_West_Vancouver_Houses_Open_Houses_WORKING_URLS_*.xlsx"), key=lambda path: path.stat().st_mtime)
+        if len(files) >= 2:
+            previous = pd.read_excel(files[-2])
+            key_type = shared_listing_key_type(data, previous)
+            previous_keys = set(listing_identity_key(previous, key_type).dropna().astype(str))
+            current_keys = listing_identity_key(data, key_type).astype(str)
+            valid_keys = current_keys.str.len().gt(5)
+            is_new = valid_keys & ~current_keys.isin(previous_keys)
+            data.loc[is_new, "listing_change_status"] = "New Address"
 
     data["is_new_since_last_refresh"] = is_new
-    data.loc[is_new, "listing_change_status"] = "New Since Last Refresh"
+    data.loc[is_new & data["listing_change_status"].eq("Existing"), "listing_change_status"] = "Changed Since Last Refresh"
     return data
 
 def listing_label(row: pd.Series) -> str:
@@ -652,7 +664,7 @@ def main() -> None:
         default=["Unreviewed", "Liked", "Needs Review", "Offered"],
     )
     st.sidebar.caption("Unreviewed means not reviewed by us yet. It does not mean new to market. Use New since last refresh for newly appeared listings.")
-    show_new_only = st.sidebar.checkbox("New since last refresh only", value=False)
+    show_new_only = st.sidebar.checkbox("Changed/new since last refresh only", value=False)
     use_drawn_area = st.sidebar.checkbox("Filter by area drawn on map", value=False)
     if use_drawn_area:
         st.sidebar.caption("Use the rectangle/polygon tool on the map, then the app will filter listings inside the drawn box.")
@@ -756,9 +768,9 @@ def main() -> None:
     top = filtered.head(20)
     if show_new_only:
         if filtered.empty:
-            st.info("No newly detected listings are available in the current refresh comparison.")
+            st.info("No changed/new listings are available in the current refresh comparison.")
         else:
-            st.info(f"New-only mode is showing {len(filtered)} newly detected listing(s), regardless of buyer filters.")
+            st.info(f"New-only mode is showing {len(filtered)} changed/new listing(s), regardless of buyer filters.")
 
     if auto_photo_scoring and openai_ready() and not top.empty:
         if st.session_state.get("ai_photo_quota_blocked"):
@@ -785,7 +797,7 @@ def main() -> None:
 
     metric_cols = st.columns(5)
     metric_cols[0].metric("Map listings", len(filtered))
-    metric_cols[1].metric("New since refresh", int(scored["is_new_since_last_refresh"].sum()) if "is_new_since_last_refresh" in scored else 0)
+    metric_cols[1].metric("Changed since refresh", int(scored["is_new_since_last_refresh"].sum()) if "is_new_since_last_refresh" in scored else 0)
     metric_cols[2].metric("Top shortlist", int(filtered["recommendation_bucket"].eq("Top Shortlist").sum()) if "recommendation_bucket" in filtered else 0)
     metric_cols[3].metric("Needs verify", int(scored["recommendation_bucket"].eq("Needs Verification").sum()) if "recommendation_bucket" in scored else 0)
     metric_cols[4].metric("High noise", int(scored["noise_risk"].eq("High").sum()))
@@ -835,19 +847,19 @@ def main() -> None:
 
         new_visible = filtered[filtered["is_new_since_last_refresh"]] if "is_new_since_last_refresh" in filtered else filtered.iloc[0:0]
         if not new_since_refresh_all.empty:
-            st.subheader("New Since Last Refresh")
+            st.subheader("Changed Since Last Refresh")
             hidden_by_filters = max(0, len(new_since_refresh_all) - len(new_visible))
             if hidden_by_filters:
-                st.caption(f"Showing all {len(new_since_refresh_all)} newly detected listings. {hidden_by_filters} are outside the current buyer/map filters.")
+                st.caption(f"Showing all {len(new_since_refresh_all)} changed/new listings. {hidden_by_filters} are outside the current buyer/map filters.")
             else:
-                st.caption(f"Showing {len(new_since_refresh_all)} newly detected listings.")
+                st.caption(f"Showing {len(new_since_refresh_all)} changed/new listings.")
             st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
 
         st.subheader("Listings Shown On Map" if show_all_active else "Top Matches Based on Current Filters")
         st.dataframe(display_columns(top), use_container_width=True, hide_index=True)
 
         st.subheader("Recommendation Board")
-        board_tabs = st.tabs(["New Since Refresh", "Top Shortlist", "Client Liked / Offered", "Needs Verification", "Good Candidates"])
+        board_tabs = st.tabs(["Changed/New", "Top Shortlist", "Client Liked / Offered", "Needs Verification", "Good Candidates"])
         with board_tabs[0]:
             st.caption("This tab shows all listings newly detected since the previous refresh, before buyer filters hide anything.")
             st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
