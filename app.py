@@ -712,12 +712,18 @@ def main() -> None:
     if status_filter and not show_all_active:
         filtered = filtered[filtered["client_status"].isin(status_filter)]
     if show_new_only:
-        filtered = filtered[filtered["is_new_since_last_refresh"]]
+        filtered = new_since_refresh_all.copy()
+        excluded = scored.iloc[0:0].copy()
 
     drawn_bounds = st.session_state.get("drawn_bounds") if use_drawn_area else None
     filtered_for_map = filtered.copy()
     filtered = filter_by_bounds(filtered, drawn_bounds)
     top = filtered.head(20)
+    if show_new_only:
+        if filtered.empty:
+            st.info("No newly detected listings are available in the current refresh comparison.")
+        else:
+            st.info(f"New-only mode is showing {len(filtered)} newly detected listing(s), regardless of buyer filters.")
 
     if auto_photo_scoring and openai_ready() and not top.empty:
         if st.session_state.get("ai_photo_quota_blocked"):
