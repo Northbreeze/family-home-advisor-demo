@@ -691,6 +691,9 @@ def main() -> None:
 
     scored = score_listings(df, prefs)
     scored = add_area_columns(scored)
+    new_since_refresh_all = scored[scored["is_new_since_last_refresh"]].copy() if "is_new_since_last_refresh" in scored else scored.iloc[0:0].copy()
+    if "match_score" in new_since_refresh_all.columns:
+        new_since_refresh_all = new_since_refresh_all.sort_values("match_score", ascending=False)
     filtered, excluded = filter_by_preferences(scored, prefs)
     filtered = filter_by_area(filtered, preferred_area, landmark, radius_km)
     if status_filter:
@@ -777,9 +780,14 @@ def main() -> None:
                 st.caption(f"AI photo scoring is controlled. {pending_visible} of the top visible listings still need image scores.")
 
         new_visible = filtered[filtered["is_new_since_last_refresh"]] if "is_new_since_last_refresh" in filtered else filtered.iloc[0:0]
-        if not new_visible.empty:
+        if not new_since_refresh_all.empty:
             st.subheader("New Since Last Refresh")
-            st.dataframe(display_columns(new_visible.head(20)), use_container_width=True, hide_index=True)
+            hidden_by_filters = max(0, len(new_since_refresh_all) - len(new_visible))
+            if hidden_by_filters:
+                st.caption(f"Showing all {len(new_since_refresh_all)} newly detected listings. {hidden_by_filters} are outside the current buyer/map filters.")
+            else:
+                st.caption(f"Showing {len(new_since_refresh_all)} newly detected listings.")
+            st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
 
         st.subheader("Top Matches Based on Current Filters")
         st.dataframe(display_columns(top), use_container_width=True, hide_index=True)
@@ -787,8 +795,8 @@ def main() -> None:
         st.subheader("Recommendation Board")
         board_tabs = st.tabs(["New Since Refresh", "Top Shortlist", "Client Liked / Offered", "Needs Verification", "Good Candidates"])
         with board_tabs[0]:
-            board = filtered[filtered["is_new_since_last_refresh"]] if "is_new_since_last_refresh" in filtered else filtered.iloc[0:0]
-            st.dataframe(display_columns(board.head(30)), use_container_width=True, hide_index=True)
+            st.caption("This tab shows all listings newly detected since the previous refresh, before buyer filters hide anything.")
+            st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
         with board_tabs[1]:
             board = filtered[filtered.get("recommendation_bucket", "").eq("Top Shortlist")] if "recommendation_bucket" in filtered else top
             st.dataframe(display_columns(board.head(20)), use_container_width=True, hide_index=True)
