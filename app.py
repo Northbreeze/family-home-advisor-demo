@@ -253,20 +253,55 @@ def add_new_since_last_refresh(df: pd.DataFrame, root: Path) -> pd.DataFrame:
     data = df.copy()
     data["is_new_since_last_refresh"] = False
     data["listing_change_status"] = "Existing"
-    files = sorted(root.glob("North_West_Vancouver_Houses_Open_Houses_WORKING_URLS_*.xlsx"), key=lambda path: path.stat().st_mtime)
-    if len(files) < 2:
-        return data
 
-    previous = pd.read_excel(files[-2])
-    key_type = shared_listing_key_type(data, previous)
-    previous_keys = set(listing_identity_key(previous, key_type).dropna().astype(str))
-    current_keys = listing_identity_key(data, key_type).astype(str)
-    valid_keys = current_keys.str.len().gt(5)
-    is_new = valid_keys & ~current_keys.isin(previous_keys)
+    def apply_reference_file() -> pd.Series:
+        reference_path = root / "new_listings_since_last_refresh.csv"
+        if not reference_path.exists():
+            return pd.Series(False, index=data.index)
+        try:
+            reference = pd.read_csv(reference_path)
+        except Exception:
+            return pd.Series(False, index=data.index)
+
+        ref_urls = set()
+        for column in ["Listing URL", "Website"]:
+            if column in reference.columns:
+                ref_urls.update(normalize_listing_url_key(reference[column]).dropna().astype(str))
+        ref_urls = {value for value in ref_urls if value and value.lower() not in {"nan", "none"}}
+
+        ref_mls = set()
+        if "MLS" in reference.columns:
+            ref_mls = set(reference["MLS"].fillna("").astype(str).str.upper().str.strip())
+            ref_mls = {value for value in ref_mls if value and value not in {"NAN", "NONE"}}
+
+        ref_addresses = set(address_key(reference).dropna().astype(str)) if "Address" in reference.columns else set()
+        ref_addresses = {value for value in ref_addresses if len(value) > 8}
+
+        mask = pd.Series(False, index=data.index)
+        if ref_urls:
+            current_url = url_key(data).str.replace("URL:", "", regex=False)
+            mask = mask | current_url.isin(ref_urls)
+        if ref_mls and "MLS" in data.columns:
+            current_mls = data["MLS"].fillna("").astype(str).str.upper().str.strip()
+            mask = mask | current_mls.isin(ref_mls)
+        if ref_addresses and "Address" in data.columns:
+            mask = mask | address_key(data).isin(ref_addresses)
+        return mask
+
+    files = sorted(root.glob("North_West_Vancouver_Houses_Open_Houses_WORKING_URLS_*.xlsx"), key=lambda path: path.stat().st_mtime)
+    is_new = apply_reference_file()
+
+    if len(files) >= 2:
+        previous = pd.read_excel(files[-2])
+        key_type = shared_listing_key_type(data, previous)
+        previous_keys = set(listing_identity_key(previous, key_type).dropna().astype(str))
+        current_keys = listing_identity_key(data, key_type).astype(str)
+        valid_keys = current_keys.str.len().gt(5)
+        is_new = is_new | (valid_keys & ~current_keys.isin(previous_keys))
+
     data["is_new_since_last_refresh"] = is_new
     data.loc[is_new, "listing_change_status"] = "New Since Last Refresh"
     return data
-
 
 def listing_label(row: pd.Series) -> str:
     return f"{row.get('match_score', 0):.1f} | {row.get('client_status', 'Unreviewed')} | {row.get('Address', '')}"
