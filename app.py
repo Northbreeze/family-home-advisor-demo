@@ -393,6 +393,34 @@ def auto_score_photo_candidates(candidates: pd.DataFrame, limit: int = 5) -> tup
 
 
 
+
+def inject_v2_css() -> None:
+    st.markdown(
+        """
+        <style>
+        .block-container { padding-top: 1.4rem; }
+        div[data-testid="stMetric"] {
+            background: #ffffff;
+            border: 1px solid #e8ece8;
+            border-radius: 10px;
+            padding: 14px 16px;
+            box-shadow: 0 1px 8px rgba(20, 46, 35, 0.04);
+        }
+        div[data-testid="stMetricLabel"] { color: #54645c; }
+        div[data-testid="stMetricValue"] { color: #0f5132; font-weight: 700; }
+        section[data-testid="stSidebar"] { background: #f7faf7; }
+        .v2-soft-note {
+            background: #eef8f1;
+            border: 1px solid #d8ecdc;
+            border-radius: 10px;
+            padding: 12px 14px;
+            color: #17462f;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
 def v2_marker_color(row: pd.Series) -> str:
     category = recommendation_category(row)
     status = str(row.get("client_status", "Unreviewed"))
@@ -520,25 +548,43 @@ def render_feedback_after_visit(row: pd.Series) -> None:
 
 def render_family_profile_editor(profile: dict[str, object]) -> None:
     st.subheader("Family Profile")
-    st.caption("This is the decision brain. It stores rules rather than only slider weights.")
+    st.caption("A simple decision profile for weekend touring. Edit the high-impact rules first; everything else is tucked away.")
     budget = dict(profile.get("budget_logic", PROFILE_DEFAULTS["budget_logic"]))
-    cols = st.columns(2)
-    with cols[0]:
-        helper_optional_max = st.number_input("Mortgage helper optional up to", min_value=0, value=int(budget.get("helper_optional_max", 2100000)), step=50000)
-    with cols[1]:
-        helper_helpful_max = st.number_input("Mortgage helper helpful up to", min_value=helper_optional_max, value=int(budget.get("helper_helpful_max", 2500000)), step=50000)
-    preferred_cities = st.multiselect("Preferred cities", ["West Vancouver", "North Vancouver"], default=list(profile.get("preferred_cities", ["West Vancouver", "North Vancouver"])))
-    preferred_neighbourhoods = st.multiselect("Preferred neighbourhoods", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("preferred_neighbourhoods", []) if x in AREA_KEYWORDS])
-    avoided_areas = st.multiselect("Avoided areas", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("avoided_areas", []) if x in AREA_KEYWORDS])
-    deal_breakers = st.multiselect(
-        "Deal breakers",
-        ["Highway noise", "Busy arterial road", "Steep or unusable yard", "Too small interior", "Bad location", "Major structural renovation", "Below minimum school threshold"],
-        default=list(profile.get("deal_breakers", [])),
-    )
-    important = st.text_area("Important preferences", value="\n".join(profile.get("important_preferences", [])), height=120)
-    flexible = st.text_area("Flexible preferences", value="\n".join(profile.get("flexible_preferences", [])), height=90)
-    learned = st.text_area("What the app has learned", value="\n".join(profile.get("learned_rules", [])), height=140)
-    if st.button("Save Family Profile"):
+
+    with st.container(border=True):
+        st.markdown("### Budget & mortgage-helper rule")
+        st.caption("This is the most important rule because helper need changes with price.")
+        cols = st.columns(2)
+        with cols[0]:
+            helper_optional_max = st.number_input("Helper optional up to", min_value=0, value=int(budget.get("helper_optional_max", 2100000)), step=50000)
+        with cols[1]:
+            helper_helpful_max = st.number_input("Helper helpful up to", min_value=helper_optional_max, value=int(budget.get("helper_helpful_max", 2500000)), step=50000)
+        st.markdown(f"Under ${helper_optional_max:,.0f}, a suite is optional. Above ${helper_helpful_max:,.0f}, it becomes important.")
+
+    location_col, rules_col = st.columns(2)
+    with location_col:
+        with st.container(border=True):
+            st.markdown("### Locations")
+            preferred_cities = st.multiselect("Preferred cities", ["West Vancouver", "North Vancouver"], default=list(profile.get("preferred_cities", ["West Vancouver", "North Vancouver"])))
+            preferred_neighbourhoods = st.multiselect("Preferred neighbourhoods", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("preferred_neighbourhoods", []) if x in AREA_KEYWORDS])
+            avoided_areas = st.multiselect("Avoided areas", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("avoided_areas", []) if x in AREA_KEYWORDS])
+    with rules_col:
+        with st.container(border=True):
+            st.markdown("### Deal breakers")
+            deal_breakers = st.multiselect(
+                "What should clearly flag or exclude a home?",
+                ["Highway noise", "Busy arterial road", "Steep or unusable yard", "Too small interior", "Bad location", "Major structural renovation", "Below minimum school threshold"],
+                default=list(profile.get("deal_breakers", [])),
+            )
+
+    with st.expander("Important preferences", expanded=False):
+        important = st.text_area("One preference per line", value="\n".join(profile.get("important_preferences", [])), height=130)
+    with st.expander("Flexible preferences", expanded=False):
+        flexible = st.text_area("What are you willing to compromise on?", value="\n".join(profile.get("flexible_preferences", [])), height=100)
+    with st.expander("What the app has learned", expanded=True):
+        learned = st.text_area("Editable learned rules", value="\n".join(profile.get("learned_rules", [])), height=130)
+
+    if st.button("Save Family Profile", type="primary"):
         updated = dict(profile)
         updated["budget_logic"] = {**budget, "helper_optional_max": helper_optional_max, "helper_helpful_max": helper_helpful_max}
         updated["preferred_cities"] = preferred_cities
@@ -551,7 +597,6 @@ def render_family_profile_editor(profile: dict[str, object]) -> None:
         save_family_profile(FAMILY_PROFILE_PATH, updated)
         st.success("Family profile saved.")
         st.rerun()
-
 
 def render_advisor_chat_placeholder(profile: dict[str, object]) -> None:
     st.subheader("Advisor Chat")
@@ -1024,29 +1069,17 @@ def main() -> None:
         st.subheader("Map & Listings")
         if filtered.empty:
             st.info("No listings match the current view. Switch Market view mode to All active listings or clear area filters.")
-        left_col, map_col, right_col = st.columns([1.05, 2.15, 1.25])
-        with left_col:
-            st.markdown("#### Browse")
-            st.caption("All active listings are visible by default. AI recommendations do not hide the rest.")
-            view_options = filtered.head(80).copy()
-            if view_options.empty:
-                selected_row = None
-                st.info("No listing to select.")
-            else:
-                labels = [f"{recommendation_category(row)} | {card_title(row)} | {money(row.get('price_numeric'))}" for _, row in view_options.iterrows()]
-                selected_label = st.selectbox("Select a home", labels, key="v2_selected_home")
-                selected_row = view_options.iloc[labels.index(selected_label)]
-                st.caption(f"Recommendation: {recommendation_category(selected_row)}")
-                st.caption(f"Reviewed? {selected_row.get('client_status', 'Unreviewed')}")
-                st.caption(f"Change: {selected_row.get('listing_change_status', 'Existing')}")
+        view_options = filtered.head(120).copy()
+        if view_options.empty:
+            selected_row = None
+        else:
+            labels = [f"{recommendation_category(row)} | {card_title(row)} | {money(row.get('price_numeric'))}" for _, row in view_options.iterrows()]
+            selected_label = st.selectbox("Choose a home to inspect", labels, key="v2_selected_home", label_visibility="collapsed")
+            selected_row = view_options.iloc[labels.index(selected_label)]
 
-            with st.expander("Quick filters shown", expanded=False):
-                st.write(f"Area: `{preferred_area}`")
-                st.write(f"Landmark: `{landmark}` within `{radius_km}` km")
-                st.write(f"Changed/new only: `{show_new_only}`")
-                st.write(f"View mode: `{market_view_mode}`")
-
+        map_col, right_col = st.columns([2.35, 1.0], gap="large")
         with map_col:
+            st.caption("All active listings stay visible unless you intentionally filter them. Click a marker or choose a home above to review details.")
             fmap = make_map(filtered_for_map if use_drawn_area else filtered, enable_draw=use_drawn_area)
             if fmap is not None and st_folium is not None:
                 map_data = st_folium(fmap, height=680, use_container_width=True, returned_objects=["all_drawings"])
@@ -1066,15 +1099,31 @@ def main() -> None:
             else:
                 st.warning("No listings with latitude/longitude are available for the map.")
 
+            st.markdown("#### AI Shortlist Preview")
+            preview_pool = filtered.copy() if not filtered.empty else scored.copy()
+            if "match_score" in preview_pool.columns:
+                preview_pool = preview_pool.sort_values("match_score", ascending=False)
+            preview_cols = st.columns(5)
+            for idx, (_, row) in enumerate(preview_pool.head(5).iterrows(), start=1):
+                with preview_cols[idx - 1]:
+                    with st.container(border=True):
+                        st.caption(f"#{idx} {recommendation_category(row)}")
+                        st.markdown(f"**{card_title(row)}**")
+                        st.write(money(row.get("price_numeric")))
+                        st.caption(card_subtitle(row))
+
         with right_col:
-            st.markdown("#### Selected Home")
+            with st.container(border=True):
+                st.markdown("#### Selected Home")
+                if selected_row is None:
+                    st.info("Choose a home to see the recommendation.")
+                else:
+                    render_selected_home_summary(selected_row, family_profile, key_prefix="map_selected")
             if selected_row is not None:
-                render_selected_home_summary(selected_row, family_profile, key_prefix="map_selected")
-                with st.expander("Full listing report", expanded=False):
+                with st.expander("Open full report", expanded=False):
                     render_listing_report(selected_row, family_profile)
                 render_feedback_after_visit(selected_row)
 
-        st.divider()
         if not new_since_refresh_all.empty:
             with st.expander("Changed since last refresh", expanded=False):
                 st.caption("Includes new addresses, relisted homes, and price changes from `listing_change_log.csv`.")
