@@ -59,7 +59,7 @@ except ImportError:  # pragma: no cover - handled in Streamlit UI
     st_folium = None
 
 
-APP_TITLE = "Family Home Advisor"
+APP_TITLE = "Family Home Advisor V2"
 ROOT = Path(__file__).resolve().parent
 REVIEWS_PATH = ROOT / "manual_reviews.csv"
 PHOTO_REVIEWS_PATH = ROOT / "photo_reviews.csv"
@@ -815,8 +815,9 @@ def render_review_form(row: pd.Series) -> None:
 
 
 def main() -> None:
-    st.title(APP_TITLE)
-    st.caption("A map-first weekend open-house planner and family decision assistant.")
+    st.title("Weekend Open House Planner")
+    st.caption("Family Home Advisor V2: map-first browsing, AI shortlist cards, family profile rules, and buyer-friendly listing reports.")
+    st.info("V2 is organized around four buyer sections: Map & Listings, AI Shortlist, Family Profile, and Advisor Chat. Raw tables/export tools are under Advanced / Admin.")
 
     default_path = find_default_input(ROOT)
     if default_path is None:
