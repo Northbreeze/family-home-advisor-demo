@@ -1185,7 +1185,8 @@ def main() -> None:
             if df["noise_estimated"].any():
                 st.warning("Some noise risk values are estimated because road GIS/proximity fields were missing.")
 
-        with st.expander("Manual review and BC Assessment", expanded=False):
+        with st.container(border=True):
+            st.markdown("#### Manual review and BC Assessment")
             render_bulk_assessment_editor(top)
             st.divider()
             if filtered.empty:
@@ -1248,3 +1249,4 @@ if __name__ == "__main__":
     except Exception as exc:
         st.error("The app hit an error while loading. The details below are shown so we can fix the deployed version quickly.")
         st.exception(exc)
+
