@@ -1082,16 +1082,35 @@ def main() -> None:
             st.caption("All active listings stay visible unless you intentionally filter them. Click a marker or choose a home above to review details.")
             fmap = make_map(filtered_for_map if use_drawn_area else filtered, enable_draw=use_drawn_area)
             if fmap is not None and st_folium is not None:
-                map_data = st_folium(fmap, height=680, use_container_width=True, returned_objects=["all_drawings"])
-                bounds = extract_drawn_bounds(map_data)
-                if use_drawn_area and bounds and bounds != st.session_state.get("drawn_bounds"):
-                    st.session_state["drawn_bounds"] = bounds
-                    st.rerun()
-                if use_drawn_area and st.session_state.get("drawn_bounds"):
-                    st.caption(f"Drawn-area filter active: {len(filtered)} listings inside the selected area.")
-                    if st.button("Clear drawn area"):
-                        st.session_state.pop("drawn_bounds", None)
-                        st.rerun()
+                if use_drawn_area:
+                    map_data = st_folium(
+                        fmap,
+                        height=680,
+                        use_container_width=True,
+                        returned_objects=["all_drawings"],
+                        key="family_map_draw",
+                    )
+                    bounds = extract_drawn_bounds(map_data)
+                    if bounds:
+                        st.session_state["pending_drawn_bounds"] = tuple(round(float(value), 5) for value in bounds)
+
+                    active_bounds = st.session_state.get("drawn_bounds")
+                    pending_bounds = st.session_state.get("pending_drawn_bounds")
+                    if pending_bounds and pending_bounds != active_bounds:
+                        st.caption("Drawn area ready. Click Apply drawn area to filter the listings.")
+                        if st.button("Apply drawn area"):
+                            st.session_state["drawn_bounds"] = pending_bounds
+                            st.rerun()
+                    if active_bounds:
+                        st.caption(f"Drawn-area filter active: {len(filtered)} listings inside the selected area.")
+                        if st.button("Clear drawn area"):
+                            st.session_state.pop("drawn_bounds", None)
+                            st.session_state.pop("pending_drawn_bounds", None)
+                            st.rerun()
+                else:
+                    st.session_state.pop("pending_drawn_bounds", None)
+                    st.session_state.pop("drawn_bounds", None)
+                    st_folium(fmap, height=680, use_container_width=True, key="family_map")
             elif fmap is not None:
                 st.html(map_html(fmap))
             elif folium is None:
