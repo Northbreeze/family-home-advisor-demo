@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from datetime import datetime
 import os
@@ -28,7 +28,24 @@ from photo_review import (
 )
 from review_store import load_reviews, merge_reviews, upsert_review
 from scoring import display_columns, export_excel, filter_by_preferences, marker_color, score_listings
-
+from v2_product import (
+    PROFILE_DEFAULTS,
+    append_listing_event,
+    card_subtitle,
+    card_title,
+    concerns,
+    confidence_level,
+    evidence_table,
+    listing_links,
+    load_family_profile,
+    load_listing_events,
+    mortgage_helper_need,
+    recommendation_category,
+    recommendation_sentence,
+    save_family_profile,
+    verification_steps,
+    why_it_may_work,
+)
 try:
     import folium
     from folium.plugins import Draw
@@ -46,6 +63,8 @@ APP_TITLE = "Family Home Advisor"
 ROOT = Path(__file__).resolve().parent
 REVIEWS_PATH = ROOT / "manual_reviews.csv"
 PHOTO_REVIEWS_PATH = ROOT / "photo_reviews.csv"
+FAMILY_PROFILE_PATH = ROOT / "family_profile.json"
+LISTING_EVENTS_PATH = ROOT / "listing_events.csv"
 st.set_page_config(page_title=APP_TITLE, layout="wide")
 
 try:
@@ -133,9 +152,9 @@ def make_map(df: pd.DataFrame, enable_draw: bool = False) -> folium.Map | None:
         """
         folium.Marker(
             location=[row["Latitude"], row["Longitude"]],
-            tooltip=f"{row.get('Address', '')} - {row.get('match_score', 0)}",
+            tooltip=f"{card_title(row)} - {recommendation_category(row)}",
             popup=folium.Popup(popup_html, max_width=420),
-            icon=folium.Icon(color=review_marker_color(row)),
+            icon=folium.Icon(color=v2_marker_color(row)),
         ).add_to(fmap)
 
     if enable_draw and Draw is not None:
@@ -373,6 +392,197 @@ def auto_score_photo_candidates(candidates: pd.DataFrame, limit: int = 5) -> tup
     return scored_count, messages
 
 
+
+def v2_marker_color(row: pd.Series) -> str:
+    category = recommendation_category(row)
+    status = str(row.get("client_status", "Unreviewed"))
+    if status in STATUS_COLORS:
+        return STATUS_COLORS[status]
+    return {
+        "Excellent Match": "green",
+        "Worth Touring": "orange",
+        "Significant Trade-offs": "lightred",
+        "Excluded by Deal Breaker": "red",
+        "Needs More Information": "blue",
+    }.get(category, "blue")
+
+
+def render_reason_list(title: str, items: list[str]) -> None:
+    st.markdown(f"**{title}**")
+    for item in items:
+        st.write(f"- {item}")
+
+
+def render_listing_actions(row: pd.Series, key_prefix: str = "action") -> None:
+    address = str(row.get("Address", ""))
+    cols = st.columns(4)
+    if cols[0].button("Save", key=f"{key_prefix}_save_{address}"):
+        append_listing_event(LISTING_EVENTS_PATH, "saved", address)
+        upsert_review(REVIEWS_PATH, address, {"client_status": "Liked"})
+        st.success("Saved this home.")
+        st.rerun()
+    if cols[1].button("Add to tour", key=f"{key_prefix}_tour_{address}"):
+        append_listing_event(LISTING_EVENTS_PATH, "planned_visit", address)
+        upsert_review(REVIEWS_PATH, address, {"client_status": "Needs Review"})
+        st.success("Added to the open house plan.")
+        st.rerun()
+    if cols[2].button("Reject", key=f"{key_prefix}_reject_{address}"):
+        st.session_state["rejecting_address"] = address
+    links = listing_links(row)
+    realtor_url = links.get("Realtor.ca", "")
+    if realtor_url:
+        cols[3].link_button("Realtor.ca", realtor_url)
+    else:
+        cols[3].button("Realtor.ca", disabled=True, key=f"{key_prefix}_disabled_realtor_{address}")
+
+    if st.session_state.get("rejecting_address") == address:
+        with st.form(f"reject_form_{key_prefix}_{address}"):
+            reason = st.selectbox(
+                "Why reject this home?",
+                ["Too small", "Bad location", "Close to highway / noisy", "Yard not usable", "Too expensive", "No mortgage helper", "Too much renovation", "Bad layout", "Bad schools", "Other"],
+            )
+            details = st.text_input("Optional note")
+            if st.form_submit_button("Save rejection"):
+                append_listing_event(LISTING_EVENTS_PATH, "rejected_online", address, reason, details)
+                upsert_review(REVIEWS_PATH, address, {"client_status": "Rejected", "review_notes": f"Rejected online: {reason}. {details}".strip()})
+                st.session_state.pop("rejecting_address", None)
+                st.success("Rejection saved.")
+                st.rerun()
+
+
+def render_selected_home_summary(row: pd.Series, profile: dict[str, object], key_prefix: str = "selected") -> None:
+    category = recommendation_category(row)
+    confidence = confidence_level(row)
+    st.markdown(f"### {card_title(row)}")
+    st.caption(card_subtitle(row))
+    school = row.get("final_school", "Unknown")
+    fraser = row.get("final_fraser_score", "N/A")
+    st.markdown(f"**Recommendation:** {category}")
+    st.caption(f"Confidence: {confidence} | School: {school} {fraser}")
+    st.write(recommendation_sentence(row, profile))
+    render_reason_list("Why it may work for your family", why_it_may_work(row, profile, limit=4))
+    render_reason_list("What needs checking", concerns(row, profile, limit=4))
+    render_reason_list("Recommended next step", verification_steps(row, profile, limit=3))
+    render_listing_actions(row, key_prefix=key_prefix)
+
+
+def render_listing_report(row: pd.Series, profile: dict[str, object]) -> None:
+    st.markdown(f"## {card_title(row)}")
+    st.caption(card_subtitle(row))
+    st.markdown(f"**{recommendation_category(row)}** | Confidence: **{confidence_level(row)}**")
+    st.markdown("#### Plain-English Recommendation")
+    st.write(recommendation_sentence(row, profile))
+    cols = st.columns(2)
+    with cols[0]:
+        render_reason_list("Why It May Work", why_it_may_work(row, profile, limit=5))
+    with cols[1]:
+        render_reason_list("Concerns / Trade-offs", concerns(row, profile, limit=5))
+    render_reason_list("What to Verify in Person", verification_steps(row, profile, limit=5))
+    st.markdown("#### Evidence")
+    st.dataframe(evidence_table(row, profile), use_container_width=True, hide_index=True)
+    st.markdown("#### Links")
+    link_cols = st.columns(4)
+    for idx, (label, url) in enumerate(listing_links(row).items()):
+        if url:
+            link_cols[idx % 4].link_button(label, url)
+
+
+def render_shortlist_card(row: pd.Series, profile: dict[str, object], idx: int) -> None:
+    with st.container(border=True):
+        st.markdown(f"### {card_title(row)}")
+        st.caption(card_subtitle(row))
+        st.markdown(f"**{recommendation_category(row)}** | Confidence: **{confidence_level(row)}**")
+        open_house = str(row.get("open_house_raw", row.get("Open House", "")) or "").strip()
+        if open_house and open_house.lower() != "nan":
+            st.caption(f"Open house: {open_house}")
+        render_reason_list("Why it made your shortlist", why_it_may_work(row, profile, limit=3))
+        biggest = concerns(row, profile, limit=1)[0]
+        st.markdown(f"**Biggest uncertainty:** {biggest}")
+        render_listing_actions(row, key_prefix=f"shortlist_{idx}")
+
+
+def render_feedback_after_visit(row: pd.Series) -> None:
+    address = str(row.get("Address", ""))
+    with st.expander("After-open-house feedback", expanded=False):
+        with st.form(f"visited_feedback_{address}"):
+            outcome = st.selectbox("How was it?", ["Better than expected", "As expected", "Worse than expected"])
+            reason = st.selectbox(
+                "What changed your mind?",
+                ["Noise worse than expected", "Yard smaller / not usable", "Layout felt cramped", "House felt too small", "Photos were misleading", "Renovation quality poor", "Neighbourhood not right", "Loved the location", "Loved the yard", "Good family fit", "Other"],
+            )
+            details = st.text_area("Notes", height=80)
+            if st.form_submit_button("Save visit feedback"):
+                append_listing_event(LISTING_EVENTS_PATH, "visited_open_house", address, outcome, f"{reason}. {details}".strip())
+                upsert_review(REVIEWS_PATH, address, {"client_status": "Needs Review", "review_notes": f"Visited: {outcome}. {reason}. {details}".strip()})
+                st.success("Open house feedback saved.")
+                st.rerun()
+
+
+def render_family_profile_editor(profile: dict[str, object]) -> None:
+    st.subheader("Family Profile")
+    st.caption("This is the decision brain. It stores rules rather than only slider weights.")
+    budget = dict(profile.get("budget_logic", PROFILE_DEFAULTS["budget_logic"]))
+    cols = st.columns(2)
+    with cols[0]:
+        helper_optional_max = st.number_input("Mortgage helper optional up to", min_value=0, value=int(budget.get("helper_optional_max", 2100000)), step=50000)
+    with cols[1]:
+        helper_helpful_max = st.number_input("Mortgage helper helpful up to", min_value=helper_optional_max, value=int(budget.get("helper_helpful_max", 2500000)), step=50000)
+    preferred_cities = st.multiselect("Preferred cities", ["West Vancouver", "North Vancouver"], default=list(profile.get("preferred_cities", ["West Vancouver", "North Vancouver"])))
+    preferred_neighbourhoods = st.multiselect("Preferred neighbourhoods", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("preferred_neighbourhoods", []) if x in AREA_KEYWORDS])
+    avoided_areas = st.multiselect("Avoided areas", sorted(AREA_KEYWORDS.keys()), default=[x for x in profile.get("avoided_areas", []) if x in AREA_KEYWORDS])
+    deal_breakers = st.multiselect(
+        "Deal breakers",
+        ["Highway noise", "Busy arterial road", "Steep or unusable yard", "Too small interior", "Bad location", "Major structural renovation", "Below minimum school threshold"],
+        default=list(profile.get("deal_breakers", [])),
+    )
+    important = st.text_area("Important preferences", value="\n".join(profile.get("important_preferences", [])), height=120)
+    flexible = st.text_area("Flexible preferences", value="\n".join(profile.get("flexible_preferences", [])), height=90)
+    learned = st.text_area("What the app has learned", value="\n".join(profile.get("learned_rules", [])), height=140)
+    if st.button("Save Family Profile"):
+        updated = dict(profile)
+        updated["budget_logic"] = {**budget, "helper_optional_max": helper_optional_max, "helper_helpful_max": helper_helpful_max}
+        updated["preferred_cities"] = preferred_cities
+        updated["preferred_neighbourhoods"] = preferred_neighbourhoods
+        updated["avoided_areas"] = avoided_areas
+        updated["deal_breakers"] = deal_breakers
+        updated["important_preferences"] = [line.strip() for line in important.splitlines() if line.strip()]
+        updated["flexible_preferences"] = [line.strip() for line in flexible.splitlines() if line.strip()]
+        updated["learned_rules"] = [line.strip() for line in learned.splitlines() if line.strip()]
+        save_family_profile(FAMILY_PROFILE_PATH, updated)
+        st.success("Family profile saved.")
+        st.rerun()
+
+
+def render_advisor_chat_placeholder(profile: dict[str, object]) -> None:
+    st.subheader("Advisor Chat")
+    st.caption("V2 placeholder: the app suggests structured rules and asks before saving them. Full LLM integration can come later.")
+    note = st.text_area("Tell the advisor what you learned", placeholder="Example: We can renovate, but highway noise is a deal breaker.", height=120)
+    if note.strip():
+        suggestions = []
+        lowered = note.lower()
+        if "highway" in lowered or "noise" in lowered:
+            suggestions.append("Highway or traffic noise should be treated as a deal breaker.")
+        if "renovat" in lowered:
+            suggestions.append("Cosmetic renovation is flexible if the location and yard work.")
+        if "mortgage" in lowered or "helper" in lowered:
+            suggestions.append("Mortgage helper importance should depend on price thresholds.")
+        if not suggestions:
+            suggestions.append("Save this as a learned family preference for future review.")
+        st.markdown("**Suggested memory/rule**")
+        for suggestion in suggestions:
+            st.write(f"- {suggestion}")
+        cols = st.columns(3)
+        if cols[0].button("Save rule"):
+            updated = dict(profile)
+            learned = list(updated.get("learned_rules", []))
+            learned.extend(suggestions)
+            updated["learned_rules"] = list(dict.fromkeys(learned))
+            save_family_profile(FAMILY_PROFILE_PATH, updated)
+            append_listing_event(LISTING_EVENTS_PATH, "advisor_rule_saved", "", "; ".join(suggestions), note)
+            st.success("Rule saved to Family Profile.")
+            st.rerun()
+        if cols[1].button("Ignore"):
+            st.info("Nothing saved.")
 def render_listing_card(row: pd.Series) -> None:
     st.subheader(str(row.get("Address", "Selected Listing")))
     metric_cols = st.columns(5)
@@ -606,7 +816,7 @@ def render_review_form(row: pd.Series) -> None:
 
 def main() -> None:
     st.title(APP_TITLE)
-    st.caption("Map-first realtor review dashboard for family-home recommendations.")
+    st.caption("A map-first weekend open-house planner and family decision assistant.")
 
     default_path = find_default_input(ROOT)
     if default_path is None:
@@ -786,113 +996,160 @@ def main() -> None:
                     st.info("AI photo scoring updated the candidate set. Refreshing rankings with image scores...")
                     st.rerun()
 
-    st.caption(f"Loaded `{Path(source_path).name}` sheet `{sheet}` with {len(raw_df)} listings. Review file: `{REVIEWS_PATH.name}`.")
-    with st.expander("Input Files And Columns", expanded=False):
-        st.write("Default input order:", DEFAULT_INPUT_CANDIDATES)
-        st.write("Columns found:", original_columns)
-        for warning in warnings:
-            st.warning(warning)
-        if df["noise_estimated"].any():
-            st.warning("Some noise risk values are estimated because road GIS/proximity fields were missing.")
+    family_profile = load_family_profile(FAMILY_PROFILE_PATH)
+    listing_events = load_listing_events(LISTING_EVENTS_PATH)
 
-    metric_cols = st.columns(5)
-    metric_cols[0].metric("Map listings", len(filtered))
-    metric_cols[1].metric("Changed since refresh", int(scored["is_new_since_last_refresh"].sum()) if "is_new_since_last_refresh" in scored else 0)
-    metric_cols[2].metric("Top shortlist", int(filtered["recommendation_bucket"].eq("Top Shortlist").sum()) if "recommendation_bucket" in filtered else 0)
-    metric_cols[3].metric("Needs verify", int(scored["recommendation_bucket"].eq("Needs Verification").sum()) if "recommendation_bucket" in scored else 0)
-    metric_cols[4].metric("High noise", int(scored["noise_risk"].eq("High").sum()))
+    st.markdown("### Weekend Open House Decision Assistant")
+    st.caption(
+        f"Loaded {len(scored)} active listings. Showing {len(filtered)} on the map. "
+        f"{int(scored['is_new_since_last_refresh'].sum()) if 'is_new_since_last_refresh' in scored else 0} changed since the last refresh."
+    )
 
-    explore_tab, review_tab, export_tab = st.tabs(["Explore", "Review & Notes", "Export"])
+    summary_cols = st.columns(4)
+    summary_cols[0].metric("Active listings", len(scored))
+    summary_cols[1].metric("Shown on map", len(filtered))
+    summary_cols[2].metric("Weekend/open houses", int(scored["open_house_status"].eq("Upcoming").sum()) if "open_house_status" in scored else 0)
+    summary_cols[3].metric("Changed", int(scored["is_new_since_last_refresh"].sum()) if "is_new_since_last_refresh" in scored else 0)
 
-    with explore_tab:
-        st.subheader("Market Map")
-        fmap = make_map(filtered_for_map if use_drawn_area else filtered, enable_draw=use_drawn_area)
-        if fmap is not None and st_folium is not None:
-            map_data = st_folium(fmap, height=620, use_container_width=True, returned_objects=["all_drawings"])
-            bounds = extract_drawn_bounds(map_data)
-            if use_drawn_area and bounds and bounds != st.session_state.get("drawn_bounds"):
-                st.session_state["drawn_bounds"] = bounds
-                st.rerun()
-            if use_drawn_area and st.session_state.get("drawn_bounds"):
-                st.caption(f"Drawn-area filter active: {len(filtered)} listings inside the selected area.")
-                if st.button("Clear drawn area"):
-                    st.session_state.pop("drawn_bounds", None)
-                    st.rerun()
-        elif fmap is not None:
-            st.html(map_html(fmap))
-        elif folium is None:
-            st.warning("Install `folium` to show the interactive map.")
-        else:
-            st.warning("No listings with latitude/longitude are available for the map.")
+    map_tab, shortlist_tab, profile_tab, chat_tab, advanced_tab = st.tabs([
+        "Map & Listings",
+        "AI Shortlist",
+        "Family Profile",
+        "Advisor Chat",
+        "Advanced / Admin",
+    ])
 
-        ai_action_cols = st.columns([1, 2])
-        with ai_action_cols[0]:
-            if st.button("Score photos for top visible listings", disabled=not openai_ready() or filtered.empty):
-                if st.session_state.get("ai_photo_quota_blocked"):
-                    st.warning("AI photo scoring is paused after a quota/billing error. Use Reset AI photo pause in the sidebar after fixing billing.")
-                else:
-                    with st.spinner(f"Scoring photos for up to {auto_photo_limit} visible listing(s)..."):
-                        scored_count, photo_messages = auto_score_photo_candidates(filtered.head(20), limit=auto_photo_limit)
-                    if photo_messages:
-                        st.info("\n".join(photo_messages[-5:]))
-                    if scored_count:
-                        st.success("AI photo scores saved. Refreshing rankings with image scores...")
-                        st.rerun()
-        with ai_action_cols[1]:
-            if not openai_ready():
-                st.caption("AI photo scoring needs `OPENAI_API_KEY`. The app still ranks using listing data and manual review fields.")
-            else:
-                pending_visible = int(filtered.head(20).apply(needs_ai_photo_score, axis=1).sum()) if not filtered.empty else 0
-                st.caption(f"AI photo scoring is controlled. {pending_visible} of the top visible listings still need image scores.")
-
-        new_visible = filtered[filtered["is_new_since_last_refresh"]] if "is_new_since_last_refresh" in filtered else filtered.iloc[0:0]
-        if not new_since_refresh_all.empty:
-            st.subheader("Changed Since Last Refresh")
-            hidden_by_filters = max(0, len(new_since_refresh_all) - len(new_visible))
-            if hidden_by_filters:
-                st.caption(f"Showing all {len(new_since_refresh_all)} changed/new listings. {hidden_by_filters} are outside the current buyer/map filters.")
-            else:
-                st.caption(f"Showing {len(new_since_refresh_all)} changed/new listings.")
-            st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
-
-        st.subheader("Listings Shown On Map" if show_all_active else "Top Matches Based on Current Filters")
-        st.dataframe(display_columns(top), use_container_width=True, hide_index=True)
-
-        st.subheader("Recommendation Board")
-        board_tabs = st.tabs(["Changed/New", "Top Shortlist", "Client Liked / Offered", "Needs Verification", "Good Candidates"])
-        with board_tabs[0]:
-            st.caption("This tab shows all listings newly detected since the previous refresh, before buyer filters hide anything.")
-            st.dataframe(display_columns(new_since_refresh_all.head(30)), use_container_width=True, hide_index=True)
-        with board_tabs[1]:
-            board = filtered[filtered.get("recommendation_bucket", "").eq("Top Shortlist")] if "recommendation_bucket" in filtered else top
-            st.dataframe(display_columns(board.head(20)), use_container_width=True, hide_index=True)
-        with board_tabs[2]:
-            board = scored[scored.get("recommendation_bucket", "").eq("Client Liked / Offered")] if "recommendation_bucket" in scored else scored.iloc[0:0]
-            st.dataframe(display_columns(board), use_container_width=True, hide_index=True)
-        with board_tabs[3]:
-            board = filtered[filtered.get("recommendation_bucket", "").eq("Needs Verification")] if "recommendation_bucket" in filtered else filtered.iloc[0:0]
-            st.dataframe(display_columns(board.head(30)), use_container_width=True, hide_index=True)
-        with board_tabs[4]:
-            board = filtered[filtered.get("recommendation_bucket", "").eq("Good Candidate")] if "recommendation_bucket" in filtered else filtered.iloc[0:0]
-            st.dataframe(display_columns(board.head(30)), use_container_width=True, hide_index=True)
-
-    with review_tab:
-        render_bulk_assessment_editor(top)
-        st.divider()
-        st.subheader("Review Selected Home")
+    with map_tab:
+        st.subheader("Map & Listings")
         if filtered.empty:
-            st.info("No listing matches the current filters.")
-        else:
-            labels = [listing_label(row) for _, row in filtered.iterrows()]
-            selected_label = st.selectbox("Choose a listing to review", labels)
-            selected_index = labels.index(selected_label)
-            selected_row = filtered.iloc[selected_index]
-            render_listing_card(selected_row)
-            render_review_form(selected_row)
+            st.info("No listings match the current view. Switch Market view mode to All active listings or clear area filters.")
+        left_col, map_col, right_col = st.columns([1.05, 2.15, 1.25])
+        with left_col:
+            st.markdown("#### Browse")
+            st.caption("All active listings are visible by default. AI recommendations do not hide the rest.")
+            view_options = filtered.head(80).copy()
+            if view_options.empty:
+                selected_row = None
+                st.info("No listing to select.")
+            else:
+                labels = [f"{recommendation_category(row)} | {card_title(row)} | {money(row.get('price_numeric'))}" for _, row in view_options.iterrows()]
+                selected_label = st.selectbox("Select a home", labels, key="v2_selected_home")
+                selected_row = view_options.iloc[labels.index(selected_label)]
+                st.caption(f"Recommendation: {recommendation_category(selected_row)}")
+                st.caption(f"Reviewed? {selected_row.get('client_status', 'Unreviewed')}")
+                st.caption(f"Change: {selected_row.get('listing_change_status', 'Existing')}")
 
-    with export_tab:
-        st.subheader("Export And Method")
-        with st.expander("Scoring Method", expanded=True):
+            with st.expander("Quick filters shown", expanded=False):
+                st.write(f"Area: `{preferred_area}`")
+                st.write(f"Landmark: `{landmark}` within `{radius_km}` km")
+                st.write(f"Changed/new only: `{show_new_only}`")
+                st.write(f"View mode: `{market_view_mode}`")
+
+        with map_col:
+            fmap = make_map(filtered_for_map if use_drawn_area else filtered, enable_draw=use_drawn_area)
+            if fmap is not None and st_folium is not None:
+                map_data = st_folium(fmap, height=680, use_container_width=True, returned_objects=["all_drawings"])
+                bounds = extract_drawn_bounds(map_data)
+                if use_drawn_area and bounds and bounds != st.session_state.get("drawn_bounds"):
+                    st.session_state["drawn_bounds"] = bounds
+                    st.rerun()
+                if use_drawn_area and st.session_state.get("drawn_bounds"):
+                    st.caption(f"Drawn-area filter active: {len(filtered)} listings inside the selected area.")
+                    if st.button("Clear drawn area"):
+                        st.session_state.pop("drawn_bounds", None)
+                        st.rerun()
+            elif fmap is not None:
+                st.html(map_html(fmap))
+            elif folium is None:
+                st.warning("Install `folium` to show the interactive map.")
+            else:
+                st.warning("No listings with latitude/longitude are available for the map.")
+
+        with right_col:
+            st.markdown("#### Selected Home")
+            if selected_row is not None:
+                render_selected_home_summary(selected_row, family_profile, key_prefix="map_selected")
+                with st.expander("Full listing report", expanded=False):
+                    render_listing_report(selected_row, family_profile)
+                render_feedback_after_visit(selected_row)
+
+        st.divider()
+        if not new_since_refresh_all.empty:
+            with st.expander("Changed since last refresh", expanded=False):
+                st.caption("Includes new addresses, relisted homes, and price changes from `listing_change_log.csv`.")
+                st.dataframe(display_columns(new_since_refresh_all.head(50)), use_container_width=True, hide_index=True)
+
+    with shortlist_tab:
+        st.subheader("AI Shortlist")
+        st.caption("Deterministic scoring creates the shortlist. The UI leads with plain-English reasons instead of raw scores.")
+        shortlist_size = st.radio("Shortlist size", [5, 10, 15], index=1, horizontal=True)
+        shortlist_pool = filtered.copy() if not filtered.empty else scored.copy()
+        if "match_score" in shortlist_pool.columns:
+            shortlist_pool = shortlist_pool.sort_values("match_score", ascending=False)
+        shortlist = shortlist_pool.head(int(shortlist_size))
+        if shortlist.empty:
+            st.info("No homes available for the shortlist with the current filters.")
+        else:
+            for idx, (_, row) in enumerate(shortlist.iterrows(), start=1):
+                render_shortlist_card(row, family_profile, idx)
+
+    with profile_tab:
+        render_family_profile_editor(family_profile)
+        st.divider()
+        st.subheader("Recent Feedback Events")
+        if listing_events.empty:
+            st.info("No listing feedback has been saved yet.")
+        else:
+            st.dataframe(listing_events.tail(25).iloc[::-1], use_container_width=True, hide_index=True)
+
+    with chat_tab:
+        render_advisor_chat_placeholder(family_profile)
+
+    with advanced_tab:
+        st.subheader("Advanced / Admin")
+        with st.expander("Input files and diagnostics", expanded=False):
+            st.write(f"Workbook: `{Path(source_path).name}` sheet `{sheet}` with `{len(raw_df)}` rows.")
+            st.write("Default input order:", DEFAULT_INPUT_CANDIDATES)
+            st.write("Columns found:", original_columns)
+            for warning in warnings:
+                st.warning(warning)
+            if df["noise_estimated"].any():
+                st.warning("Some noise risk values are estimated because road GIS/proximity fields were missing.")
+
+        with st.expander("Manual review and BC Assessment", expanded=False):
+            render_bulk_assessment_editor(top)
+            st.divider()
+            if filtered.empty:
+                st.info("No listing matches the current filters.")
+            else:
+                labels = [listing_label(row) for _, row in filtered.iterrows()]
+                selected_label = st.selectbox("Choose a listing to review", labels, key="advanced_review_listing")
+                selected_row = filtered.iloc[labels.index(selected_label)]
+                render_listing_card(selected_row)
+                render_review_form(selected_row)
+
+        with st.expander("AI photo scoring", expanded=False):
+            ai_action_cols = st.columns([1, 2])
+            with ai_action_cols[0]:
+                if st.button("Score photos for top visible listings", disabled=not openai_ready() or filtered.empty):
+                    if st.session_state.get("ai_photo_quota_blocked"):
+                        st.warning("AI photo scoring is paused after a quota/billing error. Use Reset AI photo pause in the sidebar after fixing billing.")
+                    else:
+                        with st.spinner(f"Scoring photos for up to {auto_photo_limit} visible listing(s)..."):
+                            scored_count, photo_messages = auto_score_photo_candidates(filtered.head(20), limit=auto_photo_limit)
+                        if photo_messages:
+                            st.info("\n".join(photo_messages[-5:]))
+                        if scored_count:
+                            st.success("AI photo scores saved. Refreshing rankings with image scores...")
+                            st.rerun()
+            with ai_action_cols[1]:
+                if not openai_ready():
+                    st.caption("AI photo scoring needs `OPENAI_API_KEY`. The app still ranks using listing data and manual review fields.")
+                else:
+                    pending_visible = int(filtered.head(20).apply(needs_ai_photo_score, axis=1).sum()) if not filtered.empty else 0
+                    st.caption(f"{pending_visible} of the top visible listings still need image scores.")
+
+        with st.expander("Scoring method and export", expanded=False):
             st.markdown(
                 f"""
                 `match_score = weighted_average(school, quiet, price/value, size, yard/layout/location) + school_confidence_bonus + upcoming_open_house_bonus`
@@ -901,23 +1158,20 @@ def main() -> None:
                 Manual review fields and AI photo scores can update yard/layout/quiet components. BC Assessment values are manual until entered.
                 """
             )
-
-        export_bytes = export_excel(prefs, display_columns(top), display_columns(filtered), display_columns(excluded))
-        st.download_button(
-            "Download ranked Excel",
-            data=export_bytes,
-            file_name=f"family_home_advisor_ranked_{datetime.now():%Y%m%d_%H%M}.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-        with st.expander("All Filtered Listings", expanded=False):
+            export_bytes = export_excel(prefs, display_columns(top), display_columns(filtered), display_columns(excluded))
+            st.download_button(
+                "Download ranked Excel",
+                data=export_bytes,
+                file_name=f"family_home_advisor_ranked_{datetime.now():%Y%m%d_%H%M}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
+            st.markdown("##### All listings currently shown")
             st.dataframe(display_columns(filtered), use_container_width=True, hide_index=True)
-        with st.expander("Excluded Homes", expanded=False):
+            st.markdown("##### Excluded homes")
             if not excluded.empty:
                 st.dataframe(display_columns(excluded.assign(explanation=excluded["excluded_reason"])), use_container_width=True, hide_index=True)
             else:
                 st.info("No homes excluded by hard filters.")
-
 
 if __name__ == "__main__":
     try:

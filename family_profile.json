@@ -1,0 +1,48 @@
+{
+  "budget_logic": {
+    "helper_optional_max": 2100000,
+    "helper_helpful_max": 2500000,
+    "under_optional_label": "Mortgage helper optional under $2.1M",
+    "middle_helpful_label": "Mortgage helper helpful from $2.1M to $2.5M",
+    "over_required_label": "Mortgage helper important above $2.5M"
+  },
+  "preferred_cities": [
+    "West Vancouver",
+    "North Vancouver"
+  ],
+  "preferred_neighbourhoods": [
+    "Caulfeild",
+    "Ambleside",
+    "Dundarave",
+    "Edgemont",
+    "Canyon Heights",
+    "Lynn Valley"
+  ],
+  "avoided_areas": [],
+  "deal_breakers": [
+    "Highway noise",
+    "Busy arterial road",
+    "Steep or unusable yard",
+    "Too small interior"
+  ],
+  "important_preferences": [
+    "Usable toddler yard",
+    "Quiet street",
+    "Family-sized layout",
+    "Work-from-home space",
+    "Good school",
+    "Mortgage helper depending on price",
+    "Parks / nature nearby"
+  ],
+  "flexible_preferences": [
+    "Cosmetic renovation okay",
+    "Older house okay if location is good",
+    "Kitchen can be renovated"
+  ],
+  "learned_rules": [
+    "Location matters more than finishes.",
+    "Highway noise is a deal breaker.",
+    "Mortgage helper only matters strongly above $2.1M.",
+    "Small usable yard is better than large unusable or steep lot."
+  ]
+}
