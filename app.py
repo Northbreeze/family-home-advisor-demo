@@ -56,37 +56,49 @@ def inject_css() -> None:
     st.markdown(
         """
         <style>
-        .block-container {padding-top: 1rem; max-width: 1500px;}
-        section[data-testid="stSidebar"] {background:#fbfdfb; border-right:1px solid #e5ece7;}
-        div[data-testid="stVerticalBlockBorderWrapper"] {border-radius:16px!important; border-color:#e5ece7!important; box-shadow:0 8px 22px rgba(18,52,34,.06);}
-        .topbar {display:flex; justify-content:space-between; align-items:center; padding:4px 0 14px; border-bottom:1px solid #e5ece7; margin-bottom:14px;}
-        .brand {display:flex; gap:12px; align-items:center;}
-        .logo {width:44px;height:44px;border-radius:14px;background:#eef8f1;color:#17633d;display:grid;place-items:center;font-weight:900;font-size:24px;border:1px solid #d4e9db;}
-        .title {font-size:27px;font-weight:850;color:#132018;line-height:1;}
-        .sub {font-size:13px;color:#68766f;margin-top:4px;}
-        .metric-grid {display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin:16px 0;}
-        .metric {background:white;border:1px solid #e5ece7;border-radius:16px;padding:15px 17px;box-shadow:0 8px 22px rgba(18,52,34,.05);}
-        .metric-label {font-size:12px;color:#68766f;font-weight:800;text-transform:uppercase;letter-spacing:.04em;}
-        .metric-value {font-size:25px;font-weight:850;color:#132018;margin-top:4px;}
-        .panel-title {font-size:22px;font-weight:850;color:#132018;margin:4px 0;}
-        .panel-sub {font-size:13px;color:#68766f;margin-bottom:12px;}
+        .stApp {background:#ffffff; color:#0f172a;}
+        .block-container {padding-top:.85rem; max-width:1540px;}
+        header[data-testid="stHeader"] {background:rgba(255,255,255,.92);}
+        section[data-testid="stSidebar"] {background:#ffffff; border-right:1px solid #edf1ee; box-shadow:8px 0 24px rgba(15,45,30,.03);}
+        section[data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {font-size:17px; margin-bottom:.25rem;}
+        section[data-testid="stSidebar"] label {font-weight:750; color:#111827;}
+        div[data-testid="stVerticalBlockBorderWrapper"] {border-radius:18px!important; border-color:#e7ede9!important; box-shadow:0 12px 30px rgba(18,52,34,.07);}
+        .brand {display:flex; gap:12px; align-items:center; min-width:245px;}
+        .logo {width:43px;height:43px;border-radius:14px;background:#eaf8ef;color:#07915a;display:grid;place-items:center;font-weight:900;font-size:23px;border:1px solid #cfeadb;}
+        .title {font-size:24px;font-weight:850;color:#0f172a;line-height:1;}
+        .sub {font-size:13px;color:#64748b;margin-top:4px;}
+        .avatar {width:42px;height:42px;border-radius:50%;background:#07915a;color:white;display:grid;place-items:center;font-weight:850;margin-top:2px;}
+        .panel-title {font-size:20px;font-weight:850;color:#0f172a;margin:2px 0;}
+        .panel-sub {font-size:13px;color:#64748b;margin-bottom:12px;}
+        .toolbar {display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;gap:10px;}
+        .toolbar-left {display:flex;align-items:center;gap:10px;}
+        .seg {display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5ece7;border-radius:13px;box-shadow:0 7px 18px rgba(18,52,34,.08);padding:9px 13px;font-weight:800;color:#0f172a;}
+        .seg-muted {color:#475569;font-weight:750;}
+        .home-count {display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5ece7;border-radius:13px;box-shadow:0 7px 18px rgba(18,52,34,.08);padding:9px 14px;font-weight:850;}
+        .home-count-dot {width:8px;height:8px;border-radius:50%;background:#07915a;display:inline-block;}
+        .right-head {display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
+        .view-all {font-size:13px;color:#07915a;font-weight:850;}
         .badge {display:inline-flex;border-radius:999px;font-size:12px;font-weight:850;padding:5px 10px;margin-bottom:8px;}
         .green {background:#e7f6ec;color:#17633d}.yellow {background:#fff7dc;color:#765800}.red {background:#fff0ee;color:#9f351f}
-        .score {display:inline-grid;place-items:center;min-width:52px;height:34px;border-radius:999px;color:white;font-weight:900;font-size:16px;}
-        .score.green-bg {background:#2f8f5b}.score.yellow-bg {background:#d6a500}.score.red-bg {background:#dc6b57}
-        .photo {height:118px;border-radius:14px;background:linear-gradient(135deg,#e8f2ec,#cfe2d7,#a8cbb7);display:flex;align-items:flex-end;padding:12px;color:#17462f;font-weight:850;border:1px solid #d7e7dc;margin-bottom:10px;}
-        .reason {font-size:13px;color:#27362e;margin:3px 0}.concern {font-size:13px;color:#86451d;margin-top:7px;}
-        .chat-note {position:fixed;right:24px;bottom:84px;z-index:999;background:white;border:1px solid #e5ece7;border-radius:18px;padding:13px 15px;max-width:360px;box-shadow:0 12px 32px rgba(17,45,30,.16);}
-        .chat-note strong{color:#17633d}.stChatInput{max-width:520px;margin-left:auto;}
-        div.stButton>button{border-radius:12px;font-weight:750;border:1px solid #dfe8e2;}
-        @media(max-width:1100px){.metric-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.topbar{align-items:flex-start;flex-direction:column;}}
+        .score {display:inline-grid;place-items:center;min-width:48px;height:32px;border-radius:10px;color:white;font-weight:900;font-size:15px;}
+        .score.green-bg {background:#07915a}.score.yellow-bg {background:#f3b700}.score.red-bg {background:#ff6b5f}
+        .photo {height:124px;border-radius:14px;background:linear-gradient(135deg,#dfeee5,#c5dfcf,#a7ccb6);display:flex;align-items:flex-end;padding:12px;color:#17462f;font-weight:850;border:1px solid #d7e7dc;margin-bottom:10px;}
+        .rec-photo .photo {height:168px; margin-bottom:0;}
+        .reason {font-size:13px;color:#27362e;margin:3px 0}.reason:before{content:'✓ ';color:#07915a;font-weight:900}.concern {font-size:13px;color:#86451d;margin-top:7px;}.concern:before{content:'⚠ ';color:#e2a100;font-weight:900}
+        .sidebar-hint {font-size:12px;color:#64748b;margin-top:-4px;margin-bottom:8px;}
+        .chat-box {border:1px solid #cfeadb;border-radius:18px;background:#ffffff;box-shadow:0 12px 30px rgba(18,52,34,.08);padding:14px;margin-top:12px;}
+        .chat-title {font-weight:850;color:#0f172a;margin-bottom:8px;}
+        .chat-bubble {background:#f8fafc;border:1px solid #edf2ef;border-radius:14px;padding:11px 12px;color:#334155;font-size:13px;margin-bottom:10px;}
+        .prompt-row {display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
+        .prompt-pill {border:1px solid #e5ece7;border-radius:999px;padding:6px 9px;font-size:11px;color:#334155;background:#fff;}
+        div.stButton>button{border-radius:12px;font-weight:800;border:1px solid #dfe8e2;background:white;}
+        div.stButton>button:hover{border-color:#07915a;color:#07915a;}
+        [data-testid="stSidebar"] .stMultiSelect [data-baseweb="tag"] {background:#e7f6ec;color:#17633d;border-radius:999px;}
+        @media(max-width:1100px){.toolbar{align-items:flex-start;flex-direction:column}.brand{min-width:0}}
         </style>
         """,
         unsafe_allow_html=True,
     )
-
-
-@st.cache_data(show_spinner=False)
 def read_workbook(path_text: str, modified_time: float) -> tuple[pd.DataFrame, str, list[str]]:
     path = Path(path_text)
     sheet = choose_listing_sheet(path)
@@ -247,6 +259,16 @@ def app_map(df: pd.DataFrame):
             popup=folium.Popup(html, max_width=300),
             icon=folium.DivIcon(html=marker_html(row), icon_size=(42, 42), icon_anchor=(21, 21)),
         ).add_to(fmap)
+    legend_html = """
+    <div style="position: fixed; left: 18px; bottom: 26px; z-index: 9999; background: white; border: 1px solid #e5ece7; border-radius: 14px; padding: 14px 16px; box-shadow: 0 10px 26px rgba(18,52,34,.16); font-family: Arial, sans-serif; min-width: 205px;">
+      <div style="font-weight: 800; margin-bottom: 10px; color: #0f172a;">AI Match Score</div>
+      <div style="display:flex; align-items:center; gap:9px; margin:7px 0; font-size:12px;"><span style="width:11px;height:11px;border-radius:50%;background:#07915a;display:inline-block;"></span>80 - 100&nbsp;&nbsp; Strong Match</div>
+      <div style="display:flex; align-items:center; gap:9px; margin:7px 0; font-size:12px;"><span style="width:11px;height:11px;border-radius:50%;background:#f3b700;display:inline-block;"></span>60 - 79&nbsp;&nbsp; Worth Visiting</div>
+      <div style="display:flex; align-items:center; gap:9px; margin:7px 0; font-size:12px;"><span style="width:11px;height:11px;border-radius:50%;background:#ff6b5f;display:inline-block;"></span>0 - 59&nbsp;&nbsp; Needs Verification</div>
+      <div style="font-size:12px; color:#0b72b9; font-weight:700; margin-top:10px;">About scores</div>
+    </div>
+    """
+    fmap.get_root().html.add_child(folium.Element(legend_html))
     return fmap
 
 
@@ -379,27 +401,30 @@ def reason_lines(row: pd.Series, profile: dict[str, Any], limit: int = 3) -> Non
 
 def recommendation_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
     with st.container(border=True):
-        photo(row)
-        badge(row)
-        cols = st.columns([0.68, 0.32])
-        with cols[0]:
+        left, right = st.columns([0.42, 0.58], gap="small")
+        with left:
+            st.markdown("<div class='rec-photo'>", unsafe_allow_html=True)
+            photo(row)
+            st.markdown("</div>", unsafe_allow_html=True)
+        with right:
+            row_top = st.columns([0.30, 0.70])
+            with row_top[0]:
+                st.markdown(f"<span class='score {tone(row)}-bg'>{score(row)}</span>", unsafe_allow_html=True)
+            with row_top[1]:
+                badge(row)
             st.markdown(f"**{title(row)}**")
-            st.caption(f"{row.get('City', '')} | {money(row.get('price_numeric', row.get('Price')))}")
-        with cols[1]:
-            st.markdown(f"<span class='score {tone(row)}-bg'>{score(row)}</span>", unsafe_allow_html=True)
-        reason_lines(row, profile, 3)
-        st.markdown(f"<div class='concern'>Main concern: {escape(concerns(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
-        a, b = st.columns(2)
-        with a:
-            if st.button("Save", key=f"save_{key}"):
-                append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
-                st.toast("Saved home")
-        with b:
-            if st.button("View Details", key=f"detail_{key}"):
-                st.session_state["selected_address"] = str(row.get("Address", ""))
-                st.rerun()
-
-
+            st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
+            reason_lines(row, profile, 3)
+            st.markdown(f"<div class='concern'>{escape(concerns(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
+            a, b = st.columns([0.48, 0.52])
+            with a:
+                if st.button("♡", key=f"save_{key}"):
+                    append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
+                    st.toast("Saved home")
+            with b:
+                if st.button("View Details", key=f"detail_{key}", use_container_width=True):
+                    st.session_state["selected_address"] = str(row.get("Address", ""))
+                    st.rerun()
 def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
     with st.container(border=True):
         photo(row)
@@ -532,35 +557,67 @@ def ai_answer(prompt: str, visible: pd.DataFrame) -> str:
 
 
 def top_header(saved_count: int) -> str:
-    st.markdown("""
-    <div class='topbar'><div class='brand'><div class='logo'>H</div><div><div class='title'>Family Home Advisor</div><div class='sub'>Find homes worth touring with family-fit AI</div></div></div></div>
-    """, unsafe_allow_html=True)
-    c1, c2, c3 = st.columns([0.60, 0.20, 0.20], gap="small")
+    c1, c2, c3, c4, c5 = st.columns([0.25, 0.43, 0.12, 0.13, 0.07], gap="medium")
     with c1:
-        search = st.text_input("Search by address, neighbourhood, or school", placeholder="Search by address, neighbourhood, or school", label_visibility="collapsed")
+        st.markdown("""
+        <div class='brand'><div class='logo'>⌂</div><div><div class='title'>Family Home Advisor</div><div class='sub'>AI-powered home search for families</div></div></div>
+        """, unsafe_allow_html=True)
     with c2:
-        if st.button("Chat with AI", use_container_width=True):
-            st.session_state["show_chat"] = not st.session_state.get("show_chat", True)
+        search = st.text_input("Search by address, neighbourhood, or school", placeholder="Search by address, neighbourhood, or school", label_visibility="collapsed")
     with c3:
-        if st.button(f"Saved Homes ({saved_count})", use_container_width=True):
+        if st.button("AI Chat ✨", use_container_width=True):
+            st.session_state["show_chat"] = not st.session_state.get("show_chat", True)
+    with c4:
+        if st.button(f"♡ Saved Homes", use_container_width=True):
             st.session_state["saved_only"] = not st.session_state.get("saved_only", False)
+    with c5:
+        st.markdown("<div class='avatar'>NN</div>", unsafe_allow_html=True)
+    st.divider()
     return search
-
-
-def metrics(scored: pd.DataFrame, visible: pd.DataFrame) -> None:
+def metrics(scored: pd.DataFrame, visible: pd.DataFrame) -> dict[str, int]:
     strong = int(visible.apply(lambda r: category(r) == "Strong Match", axis=1).sum()) if not visible.empty else 0
     open_houses = int(visible.get("open_house_status", pd.Series(index=visible.index)).eq("Upcoming").sum()) if not visible.empty else 0
     changed = int(visible.get("is_new_since_last_refresh", pd.Series(False, index=visible.index)).fillna(False).sum()) if not visible.empty else 0
-    st.markdown(f"""
-    <div class='metric-grid'>
-      <div class='metric'><div class='metric-label'>All listings</div><div class='metric-value'>{len(scored)}</div></div>
-      <div class='metric'><div class='metric-label'>Showing now</div><div class='metric-value'>{len(visible)}</div></div>
-      <div class='metric'><div class='metric-label'>Strong matches</div><div class='metric-value'>{strong}</div></div>
-      <div class='metric'><div class='metric-label'>Open houses / changed</div><div class='metric-value'>{open_houses} / {changed}</div></div>
+    return {"all": len(scored), "visible": len(visible), "strong": strong, "open_houses": open_houses, "changed": changed}
+
+
+def map_toolbar(counts: dict[str, int]) -> None:
+    st.markdown(
+        f"""
+        <div class='toolbar'>
+          <div class='toolbar-left'>
+            <div class='seg'>▣ Map</div>
+            <div class='seg seg-muted'>☷ List</div>
+            <div class='home-count'><span class='home-count-dot'></span>{counts['visible']} homes</div>
+          </div>
+          <div class='seg seg-muted'>▨</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_chat_panel(visible: pd.DataFrame) -> None:
+    st.markdown("""
+    <div class='chat-box'>
+      <div class='chat-title'>✦ Ask AI Assistant</div>
+      <div class='chat-bubble'>Hi, I'm your AI home advisor. Ask me about homes, neighbourhoods, schools, or what is best for your family.</div>
+      <div class='prompt-row'>
+        <span class='prompt-pill'>Homes under $2M with good schools</span>
+        <span class='prompt-pill'>Best for a toddler</span>
+        <span class='prompt-pill'>Compare Kilkeel and Ballantree</span>
+      </div>
     </div>
     """, unsafe_allow_html=True)
-
-
+    for message in st.session_state.get("chat_messages", [])[-3:]:
+        with st.chat_message(message["role"]):
+            st.write(message["content"])
+    question = st.text_input("Ask a question", placeholder="Ask a question...", label_visibility="collapsed", key="rail_ai_question")
+    if st.button("Send to AI", key="rail_ai_send", use_container_width=True) and question.strip():
+        st.session_state.setdefault("chat_messages", []).append({"role": "user", "content": question})
+        answer = ai_answer(question, visible)
+        st.session_state.setdefault("chat_messages", []).append({"role": "assistant", "content": answer})
+        st.rerun()
 def main() -> None:
     inject_css()
     try:
@@ -625,12 +682,11 @@ def main() -> None:
         visible = visible[visible["Address"].astype(str).isin(saved)]
     visible = sort_visible(visible, recommended_first)
 
-    metrics(scored, visible)
+    counts = metrics(scored, visible)
 
     map_col, rec_col = st.columns([0.68, 0.32], gap="large")
     with map_col:
-        st.markdown("<div class='panel-title'>Map & Listings</div>", unsafe_allow_html=True)
-        st.markdown("<div class='panel-sub'>Scores are shown directly on each pin. Green is strong, yellow is worth visiting, red needs verification.</div>", unsafe_allow_html=True)
+        map_toolbar(counts)
         fmap = app_map(visible)
         if fmap is None:
             st.info("No listings with map coordinates match the current filters.")
@@ -643,13 +699,13 @@ def main() -> None:
                 st.session_state["selected_address"] = picked
 
     with rec_col:
-        st.markdown("<div class='panel-title'>AI Recommendations</div>", unsafe_allow_html=True)
-        st.markdown("<div class='panel-sub'>Top homes to review first based on family fit, not just cheapest price.</div>", unsafe_allow_html=True)
+        st.markdown("<div class='right-head'><div class='panel-title'>✦ AI Recommendations</div><div class='view-all'>View all</div></div>", unsafe_allow_html=True)
         recs = sort_visible(visible, True).head(5)
         if recs.empty:
             st.info("No recommendations match these filters yet.")
         for i, (_, row) in enumerate(recs.iterrows(), start=1):
             recommendation_card(row, profile, f"rec_{i}_{slug(row.get('Address', ''))}")
+        render_chat_panel(visible)
 
     selected = selected_row(visible if not visible.empty else scored)
     if selected is not None:
@@ -669,21 +725,10 @@ def main() -> None:
             with cols[i % 3]:
                 listing_card(row, profile, f"listing_{i}_{slug(row.get('Address', ''))}")
 
-    st.markdown("""
-    <div class='chat-note'><strong>AI assistant</strong><br>Try: homes under $2M, avoid busy roads, good schools, toddler yard, compare Kilkeel and Ballantree.</div>
-    """, unsafe_allow_html=True)
-    if st.session_state.get("show_chat", True):
-        for message in st.session_state.get("chat_messages", [])[-4:]:
-            with st.chat_message(message["role"]):
-                st.write(message["content"])
-        prompt = st.chat_input("Ask AI to refine the search or compare homes")
-        if prompt:
-            st.session_state.setdefault("chat_messages", []).append({"role": "user", "content": prompt})
-            answer = ai_answer(prompt, visible)
-            st.session_state.setdefault("chat_messages", []).append({"role": "assistant", "content": answer})
-            st.rerun()
 
 
 if __name__ == "__main__":
     main()
+
+
 
