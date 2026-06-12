@@ -177,6 +177,63 @@ def score(row: pd.Series) -> int:
     return int(round(num(row.get("match_score"), 0)))
 
 
+
+def size_sqft_value(row: pd.Series) -> float:
+    for name in ["size_sqft", "sqft_numeric"]:
+        value = pd.to_numeric(row.get(name), errors="coerce")
+        if pd.notna(value) and float(value) > 0:
+            return float(value)
+    text = str(row.get("Size", ""))
+    match = re.search(r"([0-9][0-9,]*(?:\.\d+)?)", text)
+    if match:
+        return float(match.group(1).replace(",", ""))
+    return float("nan")
+
+
+def family_concern_items(row: pd.Series, profile: dict[str, Any] | None = None, limit: int = 4) -> list[str]:
+    profile = profile or {}
+    items: list[str] = []
+    size = size_sqft_value(row)
+    if pd.notna(size):
+        if size < 1600:
+            items.append(f"Interior size is only {size:,.0f} sqft, which is a major family-fit concern.")
+        elif size < 1900:
+            items.append(f"Interior size is {size:,.0f} sqft, so the layout needs careful verification.")
+    note = str(row.get("family_evaluation_note", "")).strip()
+    if note:
+        for part in [piece.strip() for piece in note.split(". ") if piece.strip()]:
+            text = part if part.endswith(".") else part + "."
+            if "Interior under" not in text and text not in items:
+                items.append(text)
+    for item in concerns(row, profile, limit=limit + 4):
+        if item not in items:
+            items.append(item)
+    return items[:limit] if items else ["No major concern is obvious from the current data, but photos and showing still matter."]
+
+
+def home_ai_answer(prompt: str, row: pd.Series, visible: pd.DataFrame) -> str:
+    text = prompt.lower()
+    address = title(row)
+    size = size_sqft_value(row)
+    if any(word in text for word in ["size", "sqft", "square", "small", "interior", "space"]):
+        if pd.isna(size):
+            return f"For {address}, I do not have a reliable interior sqft value in the current listing data, so this needs manual verification."
+        if size < 1600:
+            return f"{address} is about {size:,.0f} sqft. For a family, that is a serious constraint, so I cap its score and treat it as worth considering only if the layout works unusually well or expansion is realistic."
+        if size < 1900:
+            return f"{address} is about {size:,.0f} sqft. That is modest for family life, so I would verify bedroom layout, storage, and main-floor flow before prioritizing it."
+        return f"{address} is about {size:,.0f} sqft, which is more comfortable from an interior-size perspective. I would still verify layout because sqft alone does not prove family usability."
+    if any(word in text for word in ["yard", "backyard", "toddler", "play"]):
+        yard = str(row.get("yard_playability", "Unknown"))
+        yard_score = pd.to_numeric(row.get("backyard_component", 0), errors="coerce")
+        return f"For {address}, yard status is {yard}. The current yard signal score is {yard_score if pd.notna(yard_score) else 'unknown'}. This is still estimated unless photos/manual review confirm a flat usable play area."
+    if any(word in text for word in ["noise", "highway", "road", "quiet"]):
+        return f"For {address}, noise risk is {row.get('noise_risk', 'Unknown')}. The app also tracks highway distance as {row.get('distance_to_highway_m', 'unknown')} m and major-road distance as {row.get('distance_to_major_road_m', 'unknown')} m. This should be verified outside and in the backyard."
+    if any(word in text for word in ["school", "catchment"]):
+        return f"For {address}, the current school is {row.get('final_school', 'Unknown')} with Fraser score {row.get('final_fraser_score', 'unknown')}."
+    if any(word in text for word in ["price", "value", "assessment", "deal"]):
+        return f"For {address}, price is {money(row.get('price_numeric', row.get('Price')))}. BC Assessment total is {money(row.get('bc_assessment_total_value'))}, if entered. Value confidence is limited when assessment data is missing."
+    return ai_answer(f"About {row.get('Address')}: {prompt}", visible)
 def category(row: pd.Series) -> str:
     s = score(row)
     noise = str(row.get("noise_risk", "Unknown"))
@@ -241,7 +298,7 @@ def app_map(df: pd.DataFrame):
     fmap = folium.Map(location=[mapped["Latitude"].mean(), mapped["Longitude"].mean()], zoom_start=12, tiles="CartoDB positron", control_scale=True)
     for _, row in mapped.iterrows():
         reasons = why_it_may_work(row, {}, limit=1)
-        risk = concerns(row, {}, limit=1)[0]
+        risk = family_concern_items(row, {}, limit=1)[0]
         url = str(row.get("Listing URL", ""))
         html = f"""
         <div style='font-family:Arial,sans-serif;width:260px;padding:4px;'>
@@ -306,55 +363,58 @@ def base_prefs(max_price: int, min_beds: int, min_school: float, chips: list[str
     }
 
 
-def filter_data(scored: pd.DataFrame, search: str, price_range: tuple[int, int], locations: list[str], min_beds: int, home_type: str, min_school: float, yard: str, more: dict[str, bool]) -> pd.DataFrame:
+def filter_data(scored: pd.DataFrame, search: str, price_range: tuple[int, int], locations: list[str], min_beds: int, min_school: float, yard: str, more: dict[str, bool]) -> pd.DataFrame:
     data = scored.copy()
     data = data[pd.to_numeric(data["price_numeric"], errors="coerce").between(price_range[0], price_range[1], inclusive="both")]
     data = data[pd.to_numeric(data["bedrooms_numeric"], errors="coerce").fillna(0) >= min_beds]
     data = data[pd.to_numeric(data["fraser_score_numeric"], errors="coerce").fillna(0) >= min_school]
     if search.strip():
         q = search.strip().lower()
-        text = (col(data, "Address", "").astype(str) + " " + data.get("City", "").astype(str) + " " + col(data, "detected_area", "").astype(str) + " " + data.get("final_school", "").astype(str)).str.lower()
+        text = (col(data, "Address", "").astype(str) + " " + col(data, "City", "").astype(str) + " " + col(data, "detected_area", "").astype(str) + " " + col(data, "final_school", "").astype(str)).str.lower()
         data = data[text.str.contains(re.escape(q), na=False)]
     if locations:
         masks = []
         for loc in locations:
             if loc in {"North Vancouver", "West Vancouver"}:
-                masks.append(data["City"].astype(str).str.contains(loc, case=False, na=False))
+                masks.append(col(data, "City", "").astype(str).str.contains(loc, case=False, na=False))
             else:
                 masks.append(col(data, "detected_area", "").astype(str).str.contains(loc, case=False, na=False) | col(data, "Address", "").astype(str).str.contains(loc, case=False, na=False))
         mask = masks[0]
         for item in masks[1:]:
             mask = mask | item
         data = data[mask]
-    if home_type != "Any":
-        text = (col(data, "House Category", "").astype(str) + " " + col(data, "Ownership Type", "").astype(str) + " " + col(data, "Description", "").astype(str)).str.lower()
-        terms = {
-            "Detached house": ["house", "detached", "single family"],
-            "Rancher": ["rancher", "one level", "single level"],
-            "Townhouse": ["townhouse", "townhome"],
-            "Suite potential": ["suite", "mortgage helper", "separate entrance"],
-        }.get(home_type, [])
-        if terms:
-            data = data[text.apply(lambda value: any(term in value for term in terms))]
-    yard_status = data.get("yard_playability", pd.Series("Unknown", index=data.index)).astype(str)
-    yard_score = pd.to_numeric(data.get("backyard_component", pd.Series(0, index=data.index)), errors="coerce").fillna(0)
+
+    yard_status = col(data, "yard_playability", "Unknown").astype(str)
+    yard_score = pd.to_numeric(col(data, "backyard_component", 0), errors="coerce").fillna(0)
+    photo_yard = pd.to_numeric(col(data, "ai_yard_score", pd.NA), errors="coerce")
+    yard_text = (
+        col(data, "Description", "").astype(str) + " "
+        + col(data, "Public Remarks", "").astype(str) + " "
+        + col(data, "Address", "").astype(str)
+    ).str.lower()
+    usable_terms = ["yard", "backyard", "garden", "patio", "fenced", "level lot", "flat lot", "private lot", "outdoor"]
+    large_terms = ["large yard", "large backyard", "large lot", "private backyard", "sunny backyard", "oversized lot", "level backyard"]
+    text_usable = yard_text.apply(lambda value: any(term in value for term in usable_terms))
+    text_large = yard_text.apply(lambda value: any(term in value for term in large_terms))
+    positive_yard = yard_status.isin(["Great", "Maybe"]) | yard_score.ge(45) | photo_yard.ge(55).fillna(False) | text_usable
+    strong_yard = yard_status.eq("Great") | yard_score.ge(65) | photo_yard.ge(70).fillna(False) | text_large
+    known_poor = yard_status.eq("Poor") | yard_score.le(20)
     if yard == "Usable yard":
-        data = data[yard_status.isin(["Great", "Maybe"]) | (yard_score >= 65)]
+        data = data[positive_yard]
     elif yard == "Large yard signal":
-        data = data[yard_status.eq("Great") | (yard_score >= 75)]
-    elif yard == "Exclude poor/unknown yard":
-        data = data[yard_status.isin(["Great", "Maybe"]) | (yard_score >= 65)]
+        data = data[strong_yard]
+    elif yard == "Exclude known poor yard":
+        data = data[~known_poor]
+
     if more.get("open_house_only"):
         data = data[data["open_house_status"].eq("Upcoming")]
     if more.get("new_only"):
-        data = data[data.get("is_new_since_last_refresh", pd.Series(False, index=data.index)).fillna(False)]
+        data = data[col(data, "is_new_since_last_refresh", False).fillna(False)]
     if more.get("avoid_high_noise"):
         data = data[~data["noise_risk"].eq("High")]
     if more.get("assessment_only"):
-        data = data[pd.to_numeric(data.get("bc_assessment_total_value", pd.Series(index=data.index)), errors="coerce").notna()]
+        data = data[pd.to_numeric(col(data, "bc_assessment_total_value", pd.NA), errors="coerce").notna()]
     return data.copy()
-
-
 def sort_visible(df: pd.DataFrame, recommended_first: bool) -> pd.DataFrame:
     if df.empty:
         return df
@@ -417,7 +477,7 @@ def recommendation_card(row: pd.Series, profile: dict[str, Any], key: str) -> No
             st.markdown(f"**{title(row)}**")
             st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
             reason_lines(row, profile, 3)
-            st.markdown(f"<div class='concern'>{escape(concerns(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='concern'>{escape(family_concern_items(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
             if st.button("♡ Save", key=f"save_{key}", use_container_width=True):
                 append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
                 st.toast("Saved home")
@@ -481,7 +541,7 @@ def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any])
         for item in why_it_may_work(row, profile, 4):
             st.write(f"- {item}")
         st.markdown("**Concerns**")
-        for item in concerns(row, profile, 4):
+        for item in family_concern_items(row, profile, 4):
             st.write(f"- {item}")
         st.markdown("**What to verify in person**")
         for item in verification_steps(row, profile, 5):
@@ -505,7 +565,7 @@ def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any])
                 st.caption(f"{title(item)} | {money(item.get('price_numeric'))} | {score(item)}/100")
         question = st.text_input("Ask AI about this home", key=f"ask_{slug(row.get('Address', ''))}")
         if question:
-            st.info(ai_answer(f"About {row.get('Address')}: {question}", visible))
+            st.info(home_ai_answer(question, row, visible))
 
 
 def parse_chat(prompt: str, current: dict[str, Any]) -> tuple[dict[str, Any], str]:
@@ -529,6 +589,8 @@ def parse_chat(prompt: str, current: dict[str, Any]) -> tuple[dict[str, Any], st
     if any(x in text for x in ["steep", "driveway", "slope"]):
         updates["avoid_slope"] = True
         notes.append("I will flag slope or steep driveway risk for verification.")
+    if any(x in text for x in ["size", "sqft", "square", "interior", "small"]):
+        notes.append("For size questions, select a home and use Ask AI about this home so I can answer from that listing.")
     if "compare" in text:
         notes.append("I will compare the named homes when they are visible in the current results.")
     if not notes:
@@ -545,18 +607,26 @@ def ai_answer(prompt: str, visible: pd.DataFrame) -> str:
         from openai import OpenAI
         context_cols = ["Address", "City", "price_numeric", "Bedrooms", "Size", "match_score", "noise_risk", "final_school", "final_fraser_score"]
         context = visible.head(8)[[c for c in context_cols if c in visible.columns]].to_dict("records")
-        result = OpenAI().responses.create(
-            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
-            input=[
-                {"role": "system", "content": "You are a concise family home-buying assistant. Explain trade-offs and do not invent facts."},
-                {"role": "user", "content": f"Question: {prompt}\nVisible listings: {context}\nAlso state what filters or preferences you inferred."},
-            ],
-        )
-        return result.output_text or note
+        client = OpenAI()
+        requested_model = os.getenv("OPENAI_MODEL", "gpt-5.5")
+        fallback_models = [requested_model]
+        if requested_model != "gpt-4o-mini":
+            fallback_models.append("gpt-4o-mini")
+        for model_name in fallback_models:
+            try:
+                result = client.responses.create(
+                    model=model_name,
+                    input=[
+                        {"role": "system", "content": "You are a concise family home-buying assistant. Explain trade-offs and do not invent facts."},
+                        {"role": "user", "content": f"Question: {prompt}\nVisible listings: {context}\nAlso state what filters or preferences you inferred."},
+                    ],
+                )
+                return result.output_text or note
+            except Exception:
+                continue
+        return note
     except Exception:
         return note
-
-
 def top_header(saved_count: int) -> str:
     c1, c2, c3, c4, c5 = st.columns([0.25, 0.43, 0.12, 0.13, 0.07], gap="medium")
     with c1:
@@ -639,25 +709,24 @@ def main() -> None:
     default_high = min(max_price, max(2500000, int(prices.quantile(0.85)) if prices.notna().any() else 2500000))
 
     st.sidebar.markdown("### Filters")
-    price_range = st.sidebar.slider("Price range", min_price, max_price, (min_price, default_high), step=50000, format="$%d")
+    price_range = st.sidebar.slider("Price range", min_price, max_price, (min_price, default_high), step=50000, format="$%d", key="filter_price_range")
     location_options = ["North Vancouver", "West Vancouver"] + sorted(AREA_KEYWORDS.keys())
-    locations = st.sidebar.multiselect("Location", location_options, default=[])
-    bed_choice = st.sidebar.radio("Bedrooms", ["Any", "2+", "3+", "4+", "5+"], index=2, horizontal=True)
+    locations = st.sidebar.multiselect("Location", location_options, default=[], key="filter_locations")
+    bed_choice = st.sidebar.radio("Bedrooms", ["Any", "2+", "3+", "4+", "5+"], index=2, horizontal=True, key="filter_bedrooms")
     min_beds = 0 if bed_choice == "Any" else int(bed_choice.replace("+", ""))
-    home_type = st.sidebar.selectbox("Home type", ["Any", "Detached house", "Rancher", "Townhouse", "Suite potential"])
-    school_choice = st.sidebar.selectbox("School quality", ["Any", "7.0+", "8.0+", "9.0+"])
+    school_choice = st.sidebar.selectbox("School quality", ["Any", "7.0+", "8.0+", "9.0+"], key="filter_school_quality")
     min_school = 0.0 if school_choice == "Any" else float(school_choice.replace("+", ""))
-    yard = st.sidebar.selectbox("Yard size", ["Any", "Usable yard", "Large yard signal", "Exclude poor/unknown yard"])
-    recommended_first = st.sidebar.checkbox("Show recommended homes first", value=True)
+    yard = st.sidebar.selectbox("Yard size", ["Any", "Usable yard", "Large yard signal", "Exclude known poor yard"], key="filter_yard_size")
+    recommended_first = st.sidebar.checkbox("Show recommended homes first", value=True, key="filter_recommended_first")
 
     chip_options = ["Quiet street", "Good for toddlers", "Large backyard", "Move-in ready", "Strong resale", "Avoid busy roads", "Avoid steep driveway"]
-    chips = st.sidebar.multiselect("AI preference chips", chip_options, default=["Good for toddlers", "Avoid busy roads", "Large backyard"])
+    chips = st.sidebar.multiselect("AI preference chips", chip_options, default=["Good for toddlers", "Avoid busy roads", "Large backyard"], key="filter_preference_chips")
 
     with st.sidebar.expander("More Filters", expanded=False):
-        open_house_only = st.checkbox("Open houses only", value=False)
-        new_only = st.checkbox("Changed/new since last refresh", value=False)
-        avoid_high_noise = st.checkbox("Exclude high-noise homes", value="Avoid busy roads" in chips)
-        assessment_only = st.checkbox("Only homes with BC Assessment entered", value=False)
+        open_house_only = st.checkbox("Open houses only", value=False, key="filter_open_house_only")
+        new_only = st.checkbox("Changed/new since last refresh", value=False, key="filter_new_only")
+        avoid_high_noise = st.checkbox("Exclude high-noise homes", value="Avoid busy roads" in chips, key="filter_avoid_high_noise")
+        assessment_only = st.checkbox("Only homes with BC Assessment entered", value=False, key="filter_assessment_only")
         st.caption(f"Data source: {path.name}")
         if warnings:
             st.caption("Some missing columns were handled automatically.")
@@ -671,14 +740,14 @@ def main() -> None:
     if rules.get("avoid_noise"):
         avoid_high_noise = True
         if "Avoid busy roads" not in chips:
-            chips.append("Avoid busy roads")
+            chips = chips + ["Avoid busy roads"]
     if rules.get("yard_focus") and "Good for toddlers" not in chips:
-        chips.append("Good for toddlers")
+        chips = chips + ["Good for toddlers"]
 
     prefs = base_prefs(max_for_score, min_beds, min_school, chips)
     scored = apply_family_evaluation(add_area_columns(score_listings(df, prefs)), chips)
     more = {"open_house_only": open_house_only, "new_only": new_only, "avoid_high_noise": avoid_high_noise, "assessment_only": assessment_only}
-    visible = filter_data(scored, search, (price_range[0], min(price_range[1], max_for_score)), locations, min_beds, home_type, min_school, yard, more)
+    visible = filter_data(scored, search, (price_range[0], min(price_range[1], max_for_score)), locations, min_beds, min_school, yard, more)
     if st.session_state.get("saved_only") and saved:
         visible = visible[visible["Address"].astype(str).isin(saved)]
     visible = sort_visible(visible, recommended_first)
@@ -692,16 +761,16 @@ def main() -> None:
         if fmap is None:
             st.info("No listings with map coordinates match the current filters.")
         elif st_folium is None:
-            st.components.v1.html(fmap._repr_html_(), height=640)
+            st.components.v1.html(fmap._repr_html_(), height=560)
         else:
-            map_data = st_folium(fmap, height=640, use_container_width=True, returned_objects=["last_object_clicked"], key="consumer_map")
+            map_data = st_folium(fmap, height=560, use_container_width=True, returned_objects=["last_object_clicked"], key="consumer_map")
             picked = clicked_address(visible, (map_data or {}).get("last_object_clicked"))
             if picked:
                 st.session_state["selected_address"] = picked
 
     with rec_col:
         st.markdown("<div class='right-head'><div class='panel-title'>✦ AI Recommendations</div><div class='view-all'>View all</div></div>", unsafe_allow_html=True)
-        recs = sort_visible(visible, True).head(5)
+        recs = sort_visible(visible, True).head(3)
         if recs.empty:
             st.info("No recommendations match these filters yet.")
         for i, (_, row) in enumerate(recs.iterrows(), start=1):
@@ -711,9 +780,7 @@ def main() -> None:
     selected = selected_row(visible if not visible.empty else scored)
     if selected is not None:
         st.divider()
-        left, _ = st.columns([0.42, 0.58], gap="large")
-        with left:
-            detail_panel(selected, visible if not visible.empty else scored, profile)
+        detail_panel(selected, visible if not visible.empty else scored, profile)
 
     st.divider()
     st.markdown("<div class='panel-title'>All Listings</div>", unsafe_allow_html=True)
@@ -730,6 +797,8 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
 
 
 
