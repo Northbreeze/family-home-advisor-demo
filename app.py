@@ -190,27 +190,54 @@ def size_sqft_value(row: pd.Series) -> float:
     return float("nan")
 
 
+def interior_size_label(size: float) -> tuple[str, str, float | None]:
+    if pd.isna(size) or size <= 0:
+        return "Unknown", "Interior size is missing; verify listing sqft.", None
+    if size < 1600:
+        return "Major concern", f"Interior size is only {size:,.0f} sqft, which is a major family-fit concern.", 58
+    if size < 1900:
+        return "Modest", f"Interior size is {size:,.0f} sqft, so the layout needs careful verification.", 70
+    if size < 2400:
+        return "Acceptable", f"Interior size is {size:,.0f} sqft; likely workable if the layout is efficient.", None
+    if size < 3200:
+        return "Family-friendly", f"Interior size is {size:,.0f} sqft, which looks family-friendly.", None
+    return "Spacious", f"Interior size is {size:,.0f} sqft, which is spacious for family use.", None
+
+
+def interior_size_summary(row: pd.Series) -> str:
+    rating = str(row.get("interior_size_rating", "")).strip()
+    note = str(row.get("interior_size_note", "")).strip()
+    if rating and note and rating.lower() not in {"nan", "none"}:
+        return f"Interior: {rating}. {note}"
+    size = size_sqft_value(row)
+    rating, note, _ = interior_size_label(size)
+    return f"Interior: {rating}. {note}"
+
+
 def family_concern_items(row: pd.Series, profile: dict[str, Any] | None = None, limit: int = 4) -> list[str]:
     profile = profile or {}
     items: list[str] = []
-    size = size_sqft_value(row)
-    if pd.notna(size):
-        if size < 1600:
-            items.append(f"Interior size is only {size:,.0f} sqft, which is a major family-fit concern.")
-        elif size < 1900:
-            items.append(f"Interior size is {size:,.0f} sqft, so the layout needs careful verification.")
-    note = str(row.get("family_evaluation_note", "")).strip()
-    if note:
-        for part in [piece.strip() for piece in note.split(". ") if piece.strip()]:
+    rating = str(row.get("interior_size_rating", "")).strip()
+    note = str(row.get("interior_size_note", "")).strip()
+    if not rating or rating.lower() in {"nan", "none"}:
+        size = size_sqft_value(row)
+        rating, note, _ = interior_size_label(size)
+    if rating in {"Major concern", "Modest", "Unknown"} and note:
+        items.append(note)
+    family_note = str(row.get("family_evaluation_note", "")).strip()
+    if family_note:
+        for part in [piece.strip() for piece in family_note.split(". ") if piece.strip()]:
             text = part if part.endswith(".") else part + "."
-            if "Interior under" not in text and text not in items:
+            if "Interior under" not in text and "Interior size is modest" not in text and text not in items:
                 items.append(text)
     for item in concerns(row, profile, limit=limit + 4):
+        if item.startswith("Interior size") and any("Interior size" in existing for existing in items):
+            continue
+        if item.startswith("Yard usability is unknown") and any("Yard is unknown" in existing for existing in items):
+            continue
         if item not in items:
             items.append(item)
     return items[:limit] if items else ["No major concern is obvious from the current data, but photos and showing still matter."]
-
-
 def home_ai_answer(prompt: str, row: pd.Series, visible: pd.DataFrame) -> str:
     text = prompt.lower()
     address = title(row)
@@ -429,9 +456,15 @@ def col(df: pd.DataFrame, name: str, default: object = "") -> pd.Series:
 
 def apply_family_evaluation(scored: pd.DataFrame, chips: list[str]) -> pd.DataFrame:
     out = scored.copy()
-    size = pd.to_numeric(col(out, "size_sqft", 0), errors="coerce")
+    size = pd.to_numeric(col(out, "size_sqft", pd.NA), errors="coerce")
+    if size.isna().all() and "Size" in out.columns:
+        size = out["Size"].astype(str).str.extract(r"([0-9][0-9,]*(?:\.\d+)?)", expand=False).str.replace(",", "", regex=False).pipe(pd.to_numeric, errors="coerce")
     score_values = pd.to_numeric(out["match_score"], errors="coerce").fillna(0)
     out["family_evaluation_note"] = ""
+    out["interior_size_sqft"] = size
+    labels = size.apply(interior_size_label)
+    out["interior_size_rating"] = labels.apply(lambda value: value[0])
+    out["interior_size_note"] = labels.apply(lambda value: value[1])
 
     very_small = size.gt(0) & size.lt(1600)
     small = size.ge(1600) & size.lt(1900)
@@ -452,8 +485,6 @@ def apply_family_evaluation(scored: pd.DataFrame, chips: list[str]) -> pd.DataFr
         out.loc[yard_unknown, "family_evaluation_note"] += "Yard is unknown and needs photo/showing verification. "
     out["match_score"] = pd.to_numeric(out["match_score"], errors="coerce").fillna(0).round(1)
     return out.sort_values(["match_score", "price_numeric"], ascending=[False, True])
-
-
 def reason_lines(row: pd.Series, profile: dict[str, Any], limit: int = 3) -> None:
     for reason in why_it_may_work(row, profile, limit=limit):
         st.markdown(f"<div class='reason'>+ {escape(reason)}</div>", unsafe_allow_html=True)
@@ -476,6 +507,7 @@ def recommendation_card(row: pd.Series, profile: dict[str, Any], key: str) -> No
             )
             st.markdown(f"**{title(row)}**")
             st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
+            st.caption(interior_size_summary(row))
             reason_lines(row, profile, 3)
             st.markdown(f"<div class='concern'>{escape(family_concern_items(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
             if st.button("♡ Save", key=f"save_{key}", use_container_width=True):
@@ -493,6 +525,7 @@ def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
         with top[0]:
             st.markdown(f"**{title(row)}**")
             st.caption(f"{money(row.get('price_numeric', row.get('Price')))} | {row.get('Bedrooms', '')} bd | {row.get('Bathrooms', '')} ba | {row.get('Size', '')}")
+            st.caption(interior_size_summary(row))
         with top[1]:
             st.markdown(f"<span class='score {tone(row)}-bg'>{score(row)}</span>", unsafe_allow_html=True)
         badge(row)
@@ -525,6 +558,7 @@ def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any])
         badge(row)
         st.markdown(f"### {title(row)}")
         st.caption(f"{row.get('City', '')} | {money(row.get('price_numeric', row.get('Price')))} | Score {score(row)}/100")
+        st.info(interior_size_summary(row))
         st.write(recommendation_sentence(row, profile))
         st.markdown("**Score breakdown**")
         components = pd.DataFrame([
@@ -797,6 +831,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
