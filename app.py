@@ -11,6 +11,7 @@ import streamlit as st
 
 from area_filters import AREA_KEYWORDS, add_area_columns
 from data_cleaning import add_noise_columns, add_open_house_columns, choose_listing_sheet, find_default_input, money, normalize_columns
+from home_evaluation import evidence_dataframe, facts_dataframe, get_home_evaluation
 from photo_review import load_photo_reviews, merge_photo_reviews, openai_ready
 from review_store import load_reviews, merge_reviews
 from scoring import score_listings
@@ -31,6 +32,7 @@ REVIEWS_PATH = ROOT / "manual_reviews.csv"
 PHOTO_REVIEWS_PATH = ROOT / "photo_reviews.csv"
 FAMILY_PROFILE_PATH = ROOT / "family_profile.json"
 LISTING_EVENTS_PATH = ROOT / "listing_events.csv"
+HOME_EVALUATION_CACHE_PATH = ROOT / "home_evaluation_cache.json"
 BC_ASSESSMENT_SEARCH_URL = "https://www.bcassessment.ca/Property/AssessmentSearch?sp=1"
 
 st.set_page_config(page_title=APP_TITLE, layout="wide", initial_sidebar_state="expanded")
@@ -551,6 +553,71 @@ def selected_row(df: pd.DataFrame) -> pd.Series | None:
     return df.iloc[0]
 
 
+
+def bullets(items: list[Any]) -> None:
+    for item in items:
+        st.write(f"- {item}")
+
+
+def render_home_evaluation(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any]) -> None:
+    key = slug(row.get("Address", ""))
+    preferences = {
+        "family_profile": profile,
+        "active_preference_chips": st.session_state.get("filter_preference_chips", []),
+        "max_price": st.session_state.get("filter_price_range", [None, None])[-1] if st.session_state.get("filter_price_range") else None,
+        "min_bedrooms": st.session_state.get("filter_bedrooms", "3+"),
+        "school_quality": st.session_state.get("filter_school_quality", "Any"),
+        "yard_filter": st.session_state.get("filter_yard_size", "Any"),
+    }
+    force = st.button("Regenerate evaluation", key=f"regen_eval_{key}")
+    with st.spinner("Preparing home evaluation narrative..."):
+        evaluation = get_home_evaluation(
+            row,
+            preferences,
+            HOME_EVALUATION_CACHE_PATH,
+            force=force,
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        )
+
+    st.markdown("### Home Evaluation Narrative")
+    st.caption(f"Known facts come from Realtor.ca/Excel fields and rule scores. Narrative source: {evaluation.get('source', 'Unknown')} | Model: {evaluation.get('model', 'none')}")
+    with st.expander("Known facts used", expanded=False):
+        facts = facts_dataframe(evaluation)
+        if not facts.empty:
+            st.dataframe(facts, use_container_width=True, hide_index=True)
+
+    st.markdown(f"#### {evaluation.get('overall_verdict', 'Overall Verdict')}")
+    st.metric("Rule-based score", f"{float(evaluation.get('score', score(row))):.0f}/100")
+    st.write(evaluation.get("overall_summary", "No summary available."))
+
+    st.markdown("**Best For**")
+    bullets(evaluation.get("best_for", []))
+    st.markdown("**Why This Home Is Strong**")
+    bullets(evaluation.get("strengths", []))
+    st.markdown("**Main Trade-Offs and Risks**")
+    bullets(evaluation.get("tradeoffs_risks", []))
+
+    scenarios = evaluation.get("family_fit_scenarios", {}) if isinstance(evaluation.get("family_fit_scenarios"), dict) else {}
+    fit_cols = st.columns(2)
+    with fit_cols[0]:
+        st.markdown("**Excellent fit if...**")
+        bullets(scenarios.get("excellent_fit_if", []))
+    with fit_cols[1]:
+        st.markdown("**Less ideal if...**")
+        bullets(scenarios.get("less_ideal_if", []))
+
+    st.markdown("**Investment and Resale View**")
+    st.write(evaluation.get("investment_resale_view", "Verify comparable sales, BC Assessment, land value, and renovation potential."))
+    st.markdown("**What to Verify Before Touring or Offering**")
+    bullets(evaluation.get("verify_checklist", []))
+    st.success(f"AI Recommendation: {evaluation.get('ai_recommendation', 'Consider but verify')}")
+
+    with st.expander("Why this score? Raw rule-based evidence", expanded=False):
+        evidence = evidence_dataframe(evaluation)
+        if not evidence.empty:
+            st.dataframe(evidence, use_container_width=True, hide_index=True)
+        st.write("Existing rule explanation:", row.get("explanation", "Not available"))
+        st.write("Family-fit caps:", row.get("family_evaluation_note", "None"))
 def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any]) -> None:
     with st.container(border=True):
         st.markdown("<div class='panel-title'>Property Detail</div>", unsafe_allow_html=True)
@@ -558,34 +625,13 @@ def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any])
         badge(row)
         st.markdown(f"### {title(row)}")
         st.caption(f"{row.get('City', '')} | {money(row.get('price_numeric', row.get('Price')))} | Score {score(row)}/100")
-        st.info(interior_size_summary(row))
-        st.write(recommendation_sentence(row, profile))
-        st.markdown("**Score breakdown**")
-        components = pd.DataFrame([
-            {"Factor": "Location", "Score": row.get("location_component", 0)},
-            {"Factor": "Yard", "Score": row.get("backyard_component", 0)},
-            {"Factor": "Layout", "Score": row.get("layout_component", 0)},
-            {"Factor": "Quiet", "Score": row.get("quiet_component", 0)},
-            {"Factor": "Interior size", "Score": row.get("size_component", 0)},
-            {"Factor": "School", "Score": row.get("school_component", 0)},
-            {"Factor": "Value", "Score": row.get("price_component", 0)},
-        ])
-        st.dataframe(components, use_container_width=True, hide_index=True, height=285)
-        st.markdown("**What we like**")
-        for item in why_it_may_work(row, profile, 4):
-            st.write(f"- {item}")
-        st.markdown("**Concerns**")
-        for item in family_concern_items(row, profile, 4):
-            st.write(f"- {item}")
-        st.markdown("**What to verify in person**")
-        for item in verification_steps(row, profile, 5):
-            st.write(f"- {item}")
-        with st.expander("Evidence details", expanded=False):
-            st.dataframe(evidence_table(row, profile), use_container_width=True, hide_index=True)
-            links = listing_links(row)
-            pieces = [f"[{name}]({url})" for name, url in links.items() if str(url).strip()]
-            if pieces:
-                st.markdown(" | ".join(pieces))
+        render_home_evaluation(row, visible, profile)
+
+        links = listing_links(row)
+        link_parts = [f"[{name}]({url})" for name, url in links.items() if str(url).strip()]
+        if link_parts:
+            st.markdown(" | ".join(link_parts))
+
         similar = visible[visible["Address"].astype(str).ne(str(row.get("Address", "")))].copy()
         area = str(row.get("detected_area", ""))
         if area and "detected_area" in similar.columns:
@@ -594,9 +640,10 @@ def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any])
                 similar = same
         similar = similar.sort_values("match_score", ascending=False).head(3)
         if not similar.empty:
-            st.markdown("**Similar homes**")
+            st.markdown("**Similar Homes**")
             for _, item in similar.iterrows():
                 st.caption(f"{title(item)} | {money(item.get('price_numeric'))} | {score(item)}/100")
+
         question = st.text_input("Ask AI about this home", key=f"ask_{slug(row.get('Address', ''))}")
         if question:
             st.info(home_ai_answer(question, row, visible))
@@ -831,6 +878,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
