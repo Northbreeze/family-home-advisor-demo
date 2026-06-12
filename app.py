@@ -72,6 +72,13 @@ def inject_css() -> None:
         .avatar {width:42px;height:42px;border-radius:50%;background:#07915a;color:white;display:grid;place-items:center;font-weight:850;margin-top:2px;}
         .panel-title {font-size:20px;font-weight:850;color:#0f172a;margin:2px 0;}
         .panel-sub {font-size:13px;color:#64748b;margin-bottom:12px;}
+        .flow-heading {display:flex;align-items:flex-start;gap:12px;margin:20px 0 10px;}
+        .flow-index {width:34px;height:34px;border-radius:50%;background:#07915a;color:white;display:inline-grid;place-items:center;font-weight:900;flex:0 0 auto;}
+        .flow-note {font-size:13px;color:#475569;margin-top:2px;}
+        .profile-chip-row {display:flex;flex-wrap:wrap;gap:7px;margin-top:7px;}
+        .profile-chip {display:inline-flex;border:1px solid #dbe8df;background:#f6fbf8;color:#17633d;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:750;}
+        .profile-label {font-size:12px;color:#64748b;font-weight:800;text-transform:uppercase;letter-spacing:.02em;margin-bottom:4px;}
+        .profile-value {font-size:14px;color:#0f172a;font-weight:750;}
         .toolbar {display:flex;align-items:center;justify-content:space-between;margin:0 0 10px;gap:10px;}
         .toolbar-left {display:flex;align-items:center;gap:10px;}
         .seg {display:inline-flex;align-items:center;gap:8px;background:#fff;border:1px solid #e5ece7;border-radius:13px;box-shadow:0 7px 18px rgba(18,52,34,.08);padding:9px 13px;font-weight:800;color:#0f172a;}
@@ -494,53 +501,48 @@ def reason_lines(row: pd.Series, profile: dict[str, Any], limit: int = 3) -> Non
 
 def recommendation_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
     with st.container(border=True):
-        left, right = st.columns([0.42, 0.58], gap="small")
-        with left:
-            st.markdown("<div class='rec-photo'>", unsafe_allow_html=True)
-            photo(row)
-            st.markdown("</div>", unsafe_allow_html=True)
-        with right:
-            st.markdown(
-                f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;'>"
-                f"<span class='score {tone(row)}-bg'>{score(row)}</span>"
-                f"<span class='badge {tone(row)}'>{escape(category(row))}</span>"
-                "</div>",
-                unsafe_allow_html=True,
-            )
-            st.markdown(f"**{title(row)}**")
-            st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
-            st.caption(interior_size_summary(row))
-            reason_lines(row, profile, 3)
-            st.markdown(f"<div class='concern'>{escape(family_concern_items(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
-            if st.button("♡ Save", key=f"save_{key}", use_container_width=True):
-                append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
-                st.toast("Saved home")
-            if st.button("View Details", key=f"detail_{key}", use_container_width=True):
-                st.session_state["selected_address"] = str(row.get("Address", ""))
-                st.rerun()
+        st.markdown("<div class='rec-photo'>", unsafe_allow_html=True)
+        photo(row)
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;'>"
+            f"<span class='score {tone(row)}-bg'>{score(row)}</span>"
+            f"<span class='badge {tone(row)}'>{escape(category(row))}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(f"**{title(row)}**")
+        st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
+        st.caption(interior_size_summary(row))
+        reason_lines(row, profile, 3)
+        st.markdown(f"<div class='concern'>{escape(family_concern_items(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
+        if st.button("View Details", key=f"detail_{key}", use_container_width=True):
+            st.session_state["selected_address"] = str(row.get("Address", ""))
+            st.rerun()
+        if st.button("Save", key=f"save_{key}", use_container_width=True):
+            append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
+            st.toast("Saved home")
 
 
 def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
     with st.container(border=True):
         photo(row)
-        top = st.columns([0.72, 0.28])
-        with top[0]:
-            st.markdown(f"**{title(row)}**")
-            st.caption(f"{money(row.get('price_numeric', row.get('Price')))} | {row.get('Bedrooms', '')} bd | {row.get('Bathrooms', '')} ba | {row.get('Size', '')}")
-            st.caption(interior_size_summary(row))
-        with top[1]:
-            st.markdown(f"<span class='score {tone(row)}-bg'>{score(row)}</span>", unsafe_allow_html=True)
+        st.markdown(
+            f"<div style='display:flex;align-items:center;justify-content:space-between;gap:8px;'>"
+            f"<strong>{escape(title(row))}</strong>"
+            f"<span class='score {tone(row)}-bg'>{score(row)}</span>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"{money(row.get('price_numeric', row.get('Price')))} | {row.get('Bedrooms', '')} bd | {row.get('Bathrooms', '')} ba | {row.get('Size', '')}")
+        st.caption(interior_size_summary(row))
         badge(row)
-        a, b = st.columns(2)
-        with a:
-            if st.button("View", key=f"view_{key}"):
-                st.session_state["selected_address"] = str(row.get("Address", ""))
-                st.rerun()
-        with b:
-            if st.button("Save", key=f"card_save_{key}"):
-                append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
-                st.toast("Saved home")
-
+        if st.button("View", key=f"view_{key}", use_container_width=True):
+            st.session_state["selected_address"] = str(row.get("Address", ""))
+            st.rerun()
+        if st.button("Save", key=f"card_save_{key}", use_container_width=True):
+            append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
+            st.toast("Saved home")
 
 def selected_row(df: pd.DataFrame) -> pd.Series | None:
     if df.empty:
@@ -749,6 +751,88 @@ def map_toolbar(counts: dict[str, int]) -> None:
     )
 
 
+
+def compact_items(values: Any, limit: int = 6) -> list[str]:
+    if values is None:
+        return []
+    if isinstance(values, str):
+        items = [values]
+    else:
+        items = [str(item) for item in values if str(item).strip()]
+    clean = [item.strip() for item in items if item.strip() and item.strip().lower() not in {"nan", "none"}]
+    return clean[:limit]
+
+
+def render_flow_header(number: str, title_text: str, subtitle: str) -> None:
+    st.markdown(
+        f"""
+        <div class='flow-heading'>
+          <span class='flow-index'>{escape(str(number))}</span>
+          <div>
+            <div class='panel-title'>{escape(title_text)}</div>
+            <div class='flow-note'>{escape(subtitle)}</div>
+          </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_chip_group(label: str, values: list[str]) -> None:
+    chips_html = "".join(f"<span class='profile-chip'>{escape(value)}</span>" for value in values)
+    if not chips_html:
+        chips_html = "<span class='profile-chip'>No preference set</span>"
+    st.markdown(
+        f"""
+        <div class='profile-label'>{escape(label)}</div>
+        <div class='profile-chip-row'>{chips_html}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_family_profile_step(
+    profile: dict[str, Any],
+    chips: list[str],
+    price_range: tuple[int, int],
+    locations: list[str],
+    min_beds: int,
+    school_choice: str,
+    yard: str,
+    counts: dict[str, int],
+) -> None:
+    render_flow_header("1", "Family Profile", "These are the current family priorities used to rank homes.")
+    with st.container(border=True):
+        cols = st.columns([0.34, 0.33, 0.33], gap="large")
+        with cols[0]:
+            st.markdown("<div class='profile-label'>Search Setup</div>", unsafe_allow_html=True)
+            st.markdown(
+                f"<div class='profile-value'>{money(price_range[0])} to {money(price_range[1])}<br>"
+                f"{min_beds}+ bedrooms | School {escape(school_choice)} | Yard: {escape(yard)}</div>",
+                unsafe_allow_html=True,
+            )
+            active_locations = locations or compact_items(profile.get("preferred_cities"), 4)
+            render_chip_group("Locations", active_locations)
+        with cols[1]:
+            render_chip_group("Preference Chips", compact_items(chips, 7))
+            render_chip_group("Important", compact_items(profile.get("important_preferences"), 4))
+        with cols[2]:
+            render_chip_group("Deal Breakers", compact_items(profile.get("deal_breakers"), 5))
+            st.markdown(
+                f"<div class='profile-label'>Current Results</div><div class='profile-value'>{counts['visible']} homes visible from {counts['all']} active homes</div>",
+                unsafe_allow_html=True,
+            )
+
+
+def render_ranked_homes_step(visible: pd.DataFrame, profile: dict[str, Any]) -> None:
+    st.markdown("<div class='right-head'><div class='panel-title'>Ranked Homes</div><div class='view-all'>Top picks</div></div>", unsafe_allow_html=True)
+    recs = sort_visible(visible, True).head(4)
+    if recs.empty:
+        st.info("No ranked homes match these filters yet.")
+        return
+    for i, (_, row) in enumerate(recs.iterrows(), start=1):
+        recommendation_card(row, profile, f"ranked_{i}_{slug(row.get('Address', ''))}")
+
 def render_chat_panel(visible: pd.DataFrame) -> None:
     st.markdown("""
     <div class='chat-box'>
@@ -834,7 +918,11 @@ def main() -> None:
     visible = sort_visible(visible, recommended_first)
 
     counts = metrics(scored, visible)
+    selected_pool = visible if not visible.empty else scored
 
+    render_family_profile_step(profile, chips, price_range, locations, min_beds, school_choice, yard, counts)
+
+    render_flow_header("2", "Ranked Homes", "Browse the map, then use the ranked list to choose a home for review.")
     map_col, rec_col = st.columns([0.68, 0.32], gap="large")
     with map_col:
         map_toolbar(counts)
@@ -850,29 +938,27 @@ def main() -> None:
                 st.session_state["selected_address"] = picked
 
     with rec_col:
-        st.markdown("<div class='right-head'><div class='panel-title'>✦ AI Recommendations</div><div class='view-all'>View all</div></div>", unsafe_allow_html=True)
-        recs = sort_visible(visible, True).head(3)
-        if recs.empty:
-            st.info("No recommendations match these filters yet.")
-        for i, (_, row) in enumerate(recs.iterrows(), start=1):
-            recommendation_card(row, profile, f"rec_{i}_{slug(row.get('Address', ''))}")
-        render_chat_panel(visible)
+        render_ranked_homes_step(visible, profile)
 
-    selected = selected_row(visible if not visible.empty else scored)
+    render_flow_header("3", "Selected Home AI Review", "The selected listing gets the advisor-style narrative, score evidence, and touring checklist.")
+    selected = selected_row(selected_pool)
     if selected is not None:
-        st.divider()
-        detail_panel(selected, visible if not visible.empty else scored, profile)
-
-    st.divider()
-    st.markdown("<div class='panel-title'>All Listings</div>", unsafe_allow_html=True)
-    st.markdown("<div class='panel-sub'>Clean property cards replace the old spreadsheet-style table.</div>", unsafe_allow_html=True)
-    if visible.empty:
-        st.info("No homes match the current search. Try clearing filters or asking AI for a broader search.")
+        detail_panel(selected, selected_pool, profile)
     else:
-        cols = st.columns(3)
-        for i, (_, row) in enumerate(visible.head(18).iterrows()):
-            with cols[i % 3]:
-                listing_card(row, profile, f"listing_{i}_{slug(row.get('Address', ''))}")
+        st.info("Select a home from the map or ranked list to see the AI review.")
+
+    render_flow_header("4", "Ask AI", "Ask follow-up questions or tell the assistant how to adjust the search.")
+    render_chat_panel(selected_pool)
+
+    with st.expander("Browse more ranked homes", expanded=False):
+        if visible.empty:
+            st.info("No homes match the current search. Try clearing filters or asking AI for a broader search.")
+        else:
+            cols = st.columns(3)
+            for i, (_, row) in enumerate(visible.head(18).iterrows()):
+                with cols[i % 3]:
+                    listing_card(row, profile, f"listing_{i}_{slug(row.get('Address', ''))}")
+
 
 
 
