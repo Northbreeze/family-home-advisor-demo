@@ -407,24 +407,25 @@ def recommendation_card(row: pd.Series, profile: dict[str, Any], key: str) -> No
             photo(row)
             st.markdown("</div>", unsafe_allow_html=True)
         with right:
-            row_top = st.columns([0.30, 0.70])
-            with row_top[0]:
-                st.markdown(f"<span class='score {tone(row)}-bg'>{score(row)}</span>", unsafe_allow_html=True)
-            with row_top[1]:
-                badge(row)
+            st.markdown(
+                f"<div style='display:flex;align-items:center;gap:8px;margin-bottom:4px;'>"
+                f"<span class='score {tone(row)}-bg'>{score(row)}</span>"
+                f"<span class='badge {tone(row)}'>{escape(category(row))}</span>"
+                "</div>",
+                unsafe_allow_html=True,
+            )
             st.markdown(f"**{title(row)}**")
             st.caption(f"{money(row.get('price_numeric', row.get('Price')))}")
             reason_lines(row, profile, 3)
             st.markdown(f"<div class='concern'>{escape(concerns(row, profile, 1)[0])}</div>", unsafe_allow_html=True)
-            a, b = st.columns([0.48, 0.52])
-            with a:
-                if st.button("♡", key=f"save_{key}"):
-                    append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
-                    st.toast("Saved home")
-            with b:
-                if st.button("View Details", key=f"detail_{key}", use_container_width=True):
-                    st.session_state["selected_address"] = str(row.get("Address", ""))
-                    st.rerun()
+            if st.button("♡ Save", key=f"save_{key}", use_container_width=True):
+                append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
+                st.toast("Saved home")
+            if st.button("View Details", key=f"detail_{key}", use_container_width=True):
+                st.session_state["selected_address"] = str(row.get("Address", ""))
+                st.rerun()
+
+
 def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
     with st.container(border=True):
         photo(row)
