@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 from pathlib import Path
 
@@ -12,9 +12,8 @@ from scoring_layer import base_prefs, filter_ranked_data, metrics, score_family_
 from ui_layer import (
     app_map,
     clicked_address,
-    detail_panel,
+    compact_home_review,
     inject_css,
-    listing_card,
     map_toolbar,
     render_chat_panel,
     render_family_profile_step,
@@ -107,43 +106,38 @@ def main() -> None:
     selected_pool = visible if not visible.empty else scored
 
     render_family_profile_step(profile, chips, price_range, locations, min_beds, school_choice, yard, counts)
+    st.markdown(
+        "<div class='desktop-note'>Desktop decision workspace: map, selected home review, and AI chat stay visible together so you can choose the next home to tour.</div>",
+        unsafe_allow_html=True,
+    )
 
-    render_flow_header("2", "Ranked Homes", "Browse the map, then use the ranked list to choose a home for review.")
-    map_col, rec_col = st.columns([0.68, 0.32], gap="large")
+    map_col, review_col, chat_col = st.columns([0.50, 0.27, 0.23], gap="large")
     with map_col:
+        render_flow_header("2", "Ranked Homes", "Use the map and top matches to choose what to inspect next.")
         map_toolbar(counts)
         fmap = app_map(visible)
         if fmap is None:
             st.info("No listings with map coordinates match the current filters.")
         elif st_folium is None:
-            st.components.v1.html(fmap._repr_html_(), height=560)
+            st.components.v1.html(fmap._repr_html_(), height=620)
         else:
-            map_data = st_folium(fmap, height=560, use_container_width=True, returned_objects=["last_object_clicked"], key="consumer_map")
+            map_data = st_folium(fmap, height=620, use_container_width=True, returned_objects=["last_object_clicked"], key="consumer_map")
             picked = clicked_address(visible, (map_data or {}).get("last_object_clicked"))
             if picked:
                 st.session_state["selected_address"] = picked
-
-    with rec_col:
         render_ranked_homes_step(visible, profile)
 
-    render_flow_header("3", "Selected Home AI Review", "The selected listing gets the advisor-style narrative, score evidence, and touring checklist.")
     selected = selected_row(selected_pool)
-    if selected is not None:
-        detail_panel(selected, selected_pool, profile)
-    else:
-        st.info("Select a home from the map or ranked list to see the AI review.")
-
-    render_flow_header("4", "Ask AI", "Ask follow-up questions or tell the assistant how to adjust the search.")
-    render_chat_panel(selected_pool)
-
-    with st.expander("Browse more ranked homes", expanded=False):
-        if visible.empty:
-            st.info("No homes match the current search. Try clearing filters or asking AI for a broader search.")
+    with review_col:
+        render_flow_header("3", "Home Review", "Condensed decision view for the selected home.")
+        if selected is not None:
+            compact_home_review(selected, selected_pool, profile)
         else:
-            cols = st.columns(3)
-            for i, (_, row) in enumerate(visible.head(18).iterrows()):
-                with cols[i % 3]:
-                    listing_card(row, profile, f"listing_{i}")
+            st.info("Select a home from the map or ranked list to see the review.")
+
+    with chat_col:
+        render_flow_header("4", "Ask AI", "Persistent buyer-agent chat for trade-offs and tour decisions.")
+        render_chat_panel(selected_pool)
 
 
 if __name__ == "__main__":

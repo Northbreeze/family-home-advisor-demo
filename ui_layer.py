@@ -69,6 +69,13 @@ def inject_css() -> None:
         .chat-bubble {background:#f8fafc;border:1px solid #edf2ef;border-radius:14px;padding:11px 12px;color:#334155;font-size:13px;margin-bottom:10px;}
         .prompt-row {display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;}
         .prompt-pill {border:1px solid #e5ece7;border-radius:999px;padding:6px 9px;font-size:11px;color:#334155;background:#fff;}
+        .desktop-note {font-size:13px;color:#64748b;margin:-4px 0 10px;}
+        .compact-section {margin-top:12px;}
+        .compact-section-title {font-size:12px;color:#64748b;font-weight:850;text-transform:uppercase;letter-spacing:.02em;margin-bottom:5px;}
+        .compact-line {font-size:13px;color:#27362e;margin:4px 0;line-height:1.35;}
+        .compact-line.good:before {content:'+ ';color:#07915a;font-weight:900;}
+        .compact-line.risk:before {content:'! ';color:#c27803;font-weight:900;}
+        .decision-badge {border-radius:14px;background:#edf8f1;border:1px solid #cfeadb;color:#17633d;font-weight:850;padding:10px 12px;margin-top:10px;}
         div.stButton>button{border-radius:12px;font-weight:800;border:1px solid #dfe8e2;background:white;}
         div.stButton>button:hover{border-color:#07915a;color:#07915a;}
         [data-testid="stSidebar"] .stMultiSelect [data-baseweb="tag"] {background:#e7f6ec;color:#17633d;border-radius:999px;}
@@ -299,6 +306,57 @@ def render_home_evaluation(row: pd.Series, visible: pd.DataFrame, profile: dict[
         st.write("Existing rule explanation:", row.get("explanation", "Not available"))
         st.write("Family-fit caps:", row.get("family_evaluation_note", "None"))
 
+
+
+def compact_home_review(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any]) -> None:
+    preferences = {
+        "family_profile": profile,
+        "active_preference_chips": st.session_state.get("filter_preference_chips", []),
+        "max_price": st.session_state.get("filter_price_range", [None, None])[-1] if st.session_state.get("filter_price_range") else None,
+        "min_bedrooms": st.session_state.get("filter_bedrooms", "3+"),
+        "school_quality": st.session_state.get("filter_school_quality", "Any"),
+        "yard_filter": st.session_state.get("filter_yard_size", "Any"),
+    }
+    with st.spinner("Reviewing selected home..."):
+        evaluation = get_listing_evaluation(
+            row,
+            preferences,
+            HOME_EVALUATION_CACHE_PATH,
+            force=False,
+            model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"),
+        )
+
+    with st.container(border=True):
+        st.markdown("<div class='panel-title'>Home Review</div>", unsafe_allow_html=True)
+        photo(row)
+        badge(row)
+        st.markdown(f"### {title(row)}")
+        st.caption(f"{row.get('City', '')} | {money(row.get('price_numeric', row.get('Price')))} | {row.get('Bedrooms', '')} bd | {row.get('Bathrooms', '')} ba | {row.get('Size', '')}")
+        st.metric("Family Fit Score", f"{float(evaluation.get('score', score(row))):.0f}/100")
+
+        st.markdown("<div class='compact-section-title'>Summary</div>", unsafe_allow_html=True)
+        st.write(evaluation.get("overall_summary", row.get("explanation", "Review this home against the family profile.")))
+
+        strengths = evaluation.get("strengths", [])
+        if not isinstance(strengths, list) or not strengths:
+            strengths = why_it_may_work(row, profile, limit=3)
+        st.markdown("<div class='compact-section'><div class='compact-section-title'>Strengths</div></div>", unsafe_allow_html=True)
+        for item in strengths[:4]:
+            st.markdown(f"<div class='compact-line good'>{escape(str(item))}</div>", unsafe_allow_html=True)
+
+        risks = evaluation.get("tradeoffs_risks", [])
+        if not isinstance(risks, list) or not risks:
+            risks = family_concern_items(row, profile, limit=3)
+        st.markdown("<div class='compact-section'><div class='compact-section-title'>Risks</div></div>", unsafe_allow_html=True)
+        for item in risks[:4]:
+            st.markdown(f"<div class='compact-line risk'>{escape(str(item))}</div>", unsafe_allow_html=True)
+
+        recommendation = evaluation.get("ai_recommendation", category(row))
+        st.markdown(f"<div class='decision-badge'>Recommendation: {escape(str(recommendation))}</div>", unsafe_allow_html=True)
+        links = listing_links(row)
+        link_parts = [f"[{name}]({url})" for name, url in links.items() if str(url).strip()]
+        if link_parts:
+            st.markdown(" | ".join(link_parts))
 
 def detail_panel(row: pd.Series, visible: pd.DataFrame, profile: dict[str, Any]) -> None:
     with st.container(border=True):
