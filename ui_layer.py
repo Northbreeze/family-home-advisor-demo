@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 import streamlit as st
 
-from ai_layer import answer_chat, answer_home_question, evidence_dataframe, facts_dataframe, get_listing_evaluation
+from ai_layer import answer_chat, answer_home_question, evidence_dataframe, facts_dataframe, get_cached_or_fallback_listing_evaluation, get_listing_evaluation
 from data_cleaning import money
 from scoring_layer import category, family_concern_items, interior_size_summary, num, score, sort_visible, tone
 from v2_product import append_listing_event, card_title, listing_links, why_it_may_work
@@ -347,7 +347,13 @@ def render_selected_home_review(row: pd.Series | None, visible: pd.DataFrame, pr
         st.info("Click a map pin or a View Review button to open a selected home review here.")
         return
 
-    evaluation = get_listing_evaluation(row, listing_preferences(profile), HOME_EVALUATION_CACHE_PATH, force=False, model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+    preferences = listing_preferences(profile)
+    evaluation = get_cached_or_fallback_listing_evaluation(row, preferences, HOME_EVALUATION_CACHE_PATH)
+    generate_key = f"generate_ai_review_{slug(row.get('Address', ''))}"
+    if st.button("Generate / refresh AI review", key=generate_key):
+        with st.spinner("Generating AI review for this home..."):
+            evaluation = get_listing_evaluation(row, preferences, HOME_EVALUATION_CACHE_PATH, force=True, model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
+            st.toast("AI review updated")
     scenarios = evaluation.get("family_fit_scenarios", {}) if isinstance(evaluation.get("family_fit_scenarios"), dict) else {}
     strengths_raw = evaluation.get("strengths", []) if isinstance(evaluation.get("strengths"), list) else []
     risks_raw = evaluation.get("tradeoffs_risks", []) if isinstance(evaluation.get("tradeoffs_risks"), list) else []

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 import pandas as pd
 import streamlit as st
@@ -9,7 +10,7 @@ st.set_page_config(page_title="Family Home Advisor", layout="wide", initial_side
 
 from area_filters import AREA_KEYWORDS
 from ai_layer import configure_openai_key
-from data_layer import default_data_paths, load_listing_data
+from data_layer import default_data_paths, load_listing_data, source_path
 from scoring_layer import base_prefs, filter_ranked_data, metrics, score_family_fit, sort_visible
 from ui_layer import (
     app_map,
@@ -40,6 +41,20 @@ LISTING_EVENTS_PATH = ROOT / "listing_events.csv"
 configure_openai_key(ROOT, st.secrets)
 
 
+def file_mtime(path: Path) -> float:
+    return path.stat().st_mtime if path.exists() else 0.0
+
+
+@st.cache_data(show_spinner=False)
+def cached_load_listing_data(root_text: str, source_mtime: float, reviews_mtime: float, photo_reviews_mtime: float, change_log_mtime: float):
+    return load_listing_data(default_data_paths(Path(root_text)))
+
+
+@st.cache_data(show_spinner=False)
+def cached_score_family_fit(data: pd.DataFrame, prefs_json: str, chips_tuple: tuple[str, ...]) -> pd.DataFrame:
+    return score_family_fit(data, json.loads(prefs_json), list(chips_tuple))
+
+
 def inferred_chips(school_importance: int, yard_importance: int, quiet_importance: int) -> list[str]:
     chips: list[str] = []
     if quiet_importance >= 4:
@@ -54,7 +69,14 @@ def inferred_chips(school_importance: int, yard_importance: int, quiet_importanc
 def main() -> None:
     inject_css()
     try:
-        df, path, warnings = load_listing_data(DATA_PATHS)
+        source = source_path(ROOT)
+        df, path, warnings = cached_load_listing_data(
+            str(ROOT),
+            file_mtime(source),
+            file_mtime(DATA_PATHS.reviews_path),
+            file_mtime(DATA_PATHS.photo_reviews_path),
+            file_mtime(DATA_PATHS.listing_change_log_path),
+        )
     except Exception as exc:
         st.error("Could not load listings.")
         st.exception(exc)
@@ -75,8 +97,19 @@ def main() -> None:
     price_range = st.sidebar.slider("Budget", min_price, max_price, (min_price, default_high), step=50000, format="$%d", key="filter_price_range")
     bed_choice = st.sidebar.radio("Bedrooms", ["Any", "2+", "3+", "4+", "5+"], index=2, horizontal=True, key="filter_bedrooms")
     min_beds = 0 if bed_choice == "Any" else int(bed_choice.replace("+", ""))
-    location_options = ["North Vancouver", "West Vancouver"] + sorted(AREA_KEYWORDS.keys())
-    locations = st.sidebar.multiselect("Location", location_options, default=[], key="filter_locations")
+    st.sidebar.markdown("**Location**")
+    north_selected = st.sidebar.checkbox("North Vancouver", value=True, key="filter_city_north")
+    west_selected = st.sidebar.checkbox("West Vancouver", value=True, key="filter_city_west")
+    area_choice = st.sidebar.selectbox("Neighbourhood / village", ["All"] + sorted(AREA_KEYWORDS.keys()), key="filter_area_choice")
+    locations: list[str] = []
+    if north_selected and not west_selected:
+        locations.append("North Vancouver")
+    elif west_selected and not north_selected:
+        locations.append("West Vancouver")
+    elif not north_selected and not west_selected:
+        locations.append("__NO_CITY_SELECTED__")
+    if area_choice != "All":
+        locations.append(area_choice)
     school_importance = st.sidebar.slider("School importance", 1, 5, 4, key="school_importance")
     yard_importance = st.sidebar.slider("Yard importance", 1, 5, 5, key="yard_importance")
     quiet_importance = st.sidebar.slider("Quiet street importance", 1, 5, 5, key="quiet_importance")
@@ -117,7 +150,7 @@ def main() -> None:
     prefs["lifestyle_importance"] = yard_importance
     prefs["size_importance"] = max(3, yard_importance)
 
-    scored = score_family_fit(df, prefs, chips)
+    scored = cached_score_family_fit(df, json.dumps(prefs, sort_keys=True, default=str), tuple(chips))
     more = {"open_house_only": open_house_only, "new_only": new_only, "avoid_high_noise": avoid_high_noise, "assessment_only": assessment_only}
     visible = filter_ranked_data(scored, search, (price_range[0], min(price_range[1], max_for_score)), locations, min_beds, min_school, yard_filter, more)
     if saved_only and saved:
@@ -139,10 +172,10 @@ def main() -> None:
         if picked:
             st.session_state["selected_address"] = picked
 
-    render_listing_grid(visible, profile, limit=12)
-    selected_pool = visible if not visible.empty else scored
+    selected_pool = scored
     selected = selected_row(selected_pool)
     render_selected_home_review(selected, selected_pool, profile)
+    render_listing_grid(visible, profile, limit=12)
     render_floating_chat(selected_pool, selected)
 
 

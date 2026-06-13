@@ -9,7 +9,7 @@ from typing import Any
 import pandas as pd
 
 from data_cleaning import money
-from home_evaluation import evidence_dataframe, facts_dataframe, get_home_evaluation
+from home_evaluation import cache_key, evidence_dataframe, facts_dataframe, fallback_evaluation, get_home_evaluation, load_cache, known_facts, score_breakdown
 from photo_review import openai_ready
 from scoring_layer import size_sqft_value
 from v2_product import card_title
@@ -185,6 +185,19 @@ def answer_home_question(prompt: str, row: pd.Series, visible: pd.DataFrame, cur
         return f"For {address}, price is {money(row.get('price_numeric', row.get('Price')))}. BC Assessment total is {money(row.get('bc_assessment_total_value'))}, if entered. Value confidence is limited when assessment data is missing."
     _, response = answer_chat(f"About {row.get('Address')}: {prompt}", visible, current_rules)
     return response.get("answer", "I saved that as a preference note.")
+
+
+def get_cached_or_fallback_listing_evaluation(row: pd.Series, preferences: dict[str, Any], cache_path: Path) -> dict[str, Any]:
+    key = cache_key(row, preferences)
+    cache = load_cache(cache_path)
+    cached = cache.get(key)
+    if isinstance(cached, dict):
+        cached.setdefault("known_facts", known_facts(row))
+        cached.setdefault("rule_evidence", score_breakdown(row))
+        return cached
+    evaluation = fallback_evaluation(row, preferences)
+    evaluation["source"] = "Instant rule-based review"
+    return evaluation
 
 
 def get_listing_evaluation(row: pd.Series, preferences: dict[str, Any], cache_path: Path, force: bool = False, model: str | None = None) -> dict[str, Any]:
