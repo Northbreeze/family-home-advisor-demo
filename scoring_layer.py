@@ -1,4 +1,4 @@
-﻿from __future__ import annotations
+from __future__ import annotations
 
 import re
 from typing import Any
@@ -86,14 +86,14 @@ def category(row: pd.Series) -> str:
     noise = str(row.get("noise_risk", "Unknown"))
     yard = str(row.get("yard_playability", "Unknown"))
     if noise == "High" or yard == "Poor" or s < 60:
-        return "Needs Verification"
+        return "Possible fit - verify"
     if s >= 82 and noise in {"Low", "Unknown"}:
-        return "Strong Match"
-    return "Worth Visiting"
+        return "Strong family fit"
+    return "Good fit - verify"
 
 
 def tone(row: pd.Series) -> str:
-    return {"Strong Match": "green", "Worth Visiting": "yellow", "Needs Verification": "red"}[category(row)]
+    return {"Strong family fit": "green", "Good fit - verify": "yellow", "Possible fit - verify": "red"}[category(row)]
 
 
 def base_prefs(max_price: int, min_beds: int, min_school: float, chips: list[str]) -> dict[str, Any]:
@@ -222,7 +222,7 @@ def score_family_fit(df: pd.DataFrame, prefs: dict[str, Any], chips: list[str]) 
 
 
 def metrics(scored: pd.DataFrame, visible: pd.DataFrame) -> dict[str, int]:
-    strong = int(visible.apply(lambda r: category(r) == "Strong Match", axis=1).sum()) if not visible.empty else 0
+    strong = int(visible.apply(lambda r: category(r) == "Strong family fit", axis=1).sum()) if not visible.empty else 0
     open_houses = int(visible.get("open_house_status", pd.Series(index=visible.index)).eq("Upcoming").sum()) if not visible.empty else 0
     changed = int(visible.get("is_new_since_last_refresh", pd.Series(False, index=visible.index)).fillna(False).sum()) if not visible.empty else 0
     return {"all": len(scored), "visible": len(visible), "strong": strong, "open_houses": open_houses, "changed": changed}
