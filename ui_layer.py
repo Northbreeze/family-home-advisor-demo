@@ -29,7 +29,7 @@ def inject_css() -> None:
         """
         <style>
         .stApp {background:#f7faf8; color:#0f172a;}
-        .block-container {padding-top:1rem; padding-bottom:2rem; max-width:1760px;}
+        .block-container {padding-top:1rem; padding-bottom:.75rem; max-width:1760px;}
         header[data-testid="stHeader"] {background:rgba(247,250,248,.9);}
         section[data-testid="stSidebar"] {background:#ffffff; border-right:1px solid #e5ece7; box-shadow:8px 0 24px rgba(15,45,30,.035);}
         section[data-testid="stSidebar"] label {font-weight:760; color:#111827;}
@@ -49,24 +49,34 @@ def inject_css() -> None:
         .green {background:#e7f6ec;color:#17633d}.yellow {background:#fff7dc;color:#765800}.red {background:#fff0ee;color:#9f351f}
         .score-pill {display:inline-grid;place-items:center;min-width:52px;height:34px;border-radius:11px;color:white;font-weight:950;font-size:15px;}
         .score-pill.green-bg {background:#07915a}.score-pill.yellow-bg {background:#f3b700}.score-pill.red-bg {background:#ff6b5f}
-        .listing-title {font-weight:900;font-size:15px;line-height:1.25;color:#0f172a;margin-bottom:5px;}
-        .listing-meta {font-size:13px;color:#475569;line-height:1.35;margin-bottom:8px;}
-        .reason {font-size:13px;color:#27362e;margin:4px 0;line-height:1.35;}
+        .listing-title {font-weight:900;font-size:14px;line-height:1.2;color:#0f172a;margin-bottom:4px;}
+        .listing-meta {font-size:12px;color:#475569;line-height:1.25;margin-bottom:6px;}
+        .reason {font-size:12px;color:#27362e;margin:3px 0;line-height:1.28;}
         .reason:before {content:'+ ';color:#07915a;font-weight:950;}
-        .concern {font-size:13px;color:#86451d;margin:4px 0 8px;line-height:1.35;}
+        .concern {font-size:12px;color:#86451d;margin:3px 0 7px;line-height:1.28;}
         .concern:before {content:'! ';color:#d99000;font-weight:950;}
         .review-hero {display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:12px;}
         .review-title {font-size:24px;font-weight:950;line-height:1.1;color:#0f172a;margin:0 0 5px;}
         .review-meta {font-size:14px;color:#475569;line-height:1.4;}
-        .review-card-title {font-size:13px;color:#64748b;font-weight:900;text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px;}
+        .review-card-title {font-size:12px;color:#64748b;font-weight:900;text-transform:uppercase;letter-spacing:.02em;margin-bottom:6px;}
         .review-line {font-size:14px;color:#27362e;margin:6px 0;line-height:1.4;}
         .review-line.good:before {content:'+ ';color:#07915a;font-weight:950;}
         .review-line.risk:before {content:'! ';color:#d99000;font-weight:950;}
         .final-rec {border-radius:14px;background:#edf8f1;border:1px solid #cfeadb;color:#17633d;font-weight:900;padding:12px 14px;margin-top:12px;}
-        .neutral-photo {height:54px;border-radius:10px;background:#eef4f0;border:1px solid #dfe8e2;display:flex;align-items:center;justify-content:center;color:#64748b;font-size:12px;font-weight:800;margin-bottom:8px;}
-        .floating-chat-spacer {height:72px;}
+        .neutral-photo {display:none;}
+        .floating-chat-spacer {height:0;}
         div[data-testid="stPopover"] {position:fixed!important;right:24px!important;bottom:24px!important;z-index:9999!important;}
         div[data-testid="stPopover"] > button {background:#07915a!important;color:#fff!important;border-radius:999px!important;padding:0.75rem 1.15rem!important;font-weight:900!important;box-shadow:0 14px 34px rgba(7,145,90,.28)!important;border:0!important;}
+        div[data-baseweb="popover"] > div {width:390px!important;max-height:72vh!important;overflow:auto!important;border-radius:18px!important;box-shadow:0 18px 48px rgba(15,45,30,.22)!important;border:1px solid #dbe8df!important;}
+        .review-grid {display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
+        .insight-card {background:#fff;border:1px solid #e5ece7;border-radius:14px;padding:13px 14px;box-shadow:0 7px 18px rgba(18,52,34,.05);}
+        .insight-card.wide {grid-column:1 / -1;}
+        .insight-card p {margin:.1rem 0 0;color:#27362e;font-size:14px;line-height:1.45;}
+        .insight-list {margin:0;padding-left:0;list-style:none;}
+        .insight-list li {margin:6px 0;font-size:13px;line-height:1.35;color:#27362e;}
+        .insight-list.good li:before {content:'+ ';color:#07915a;font-weight:950;}
+        .insight-list.risk li:before {content:'! ';color:#d99000;font-weight:950;}
+        @media(max-width:900px){.review-grid{grid-template-columns:1fr}}
         .chat-box {border:1px solid #cfeadb;border-radius:16px;background:#ffffff;padding:12px;margin-bottom:10px;}
         .chat-title {font-weight:900;color:#0f172a;margin-bottom:6px;}
         .chat-bubble {background:#f8fafc;border:1px solid #edf2ef;border-radius:12px;padding:10px 11px;color:#334155;font-size:13px;margin-bottom:8px;}
@@ -117,10 +127,59 @@ def photo_path(row: pd.Series) -> Path | None:
 def small_photo(row: pd.Series) -> None:
     path = photo_path(row)
     if path and path.exists():
-        st.image(str(path), use_container_width=True)
-    else:
-        st.markdown("<div class='neutral-photo'>No photo</div>", unsafe_allow_html=True)
+        st.image(str(path), width=120)
 
+
+
+def signal_key(value: object) -> str:
+    text_value = re.sub(r"\s+", " ", str(value).lower()).strip()
+    if "yard" in text_value and any(word in text_value for word in ["unknown", "verify", "photo", "showing"]):
+        return "yard_verify"
+    if "price" in text_value and any(word in text_value for word in ["comfort", "budget", "within"]):
+        return "price_fit"
+    if any(word in text_value for word in ["noise", "highway", "road"]):
+        return "noise"
+    if any(word in text_value for word in ["interior", "sqft", "size", "layout"]):
+        return "interior"
+    if "school" in text_value or "catchment" in text_value:
+        return "school"
+    return text_value[:80]
+
+
+def unique_signals(items: list[Any], limit: int = 4, skip_keys: set[str] | None = None) -> list[str]:
+    skip_keys = skip_keys or set()
+    seen: set[str] = set()
+    result: list[str] = []
+    for item in items:
+        text_value = str(item).strip()
+        if not text_value or text_value.lower() in {"nan", "none"}:
+            continue
+        key = signal_key(text_value)
+        if key in skip_keys or key in seen:
+            continue
+        seen.add(key)
+        result.append(text_value)
+        if len(result) >= limit:
+            break
+    return result
+
+
+def card_strength(row: pd.Series, profile: dict[str, Any]) -> str:
+    reasons = why_it_may_work(row, profile, limit=6)
+    non_price = unique_signals(reasons, limit=1, skip_keys={"price_fit"})
+    if non_price:
+        return non_price[0]
+    return unique_signals(reasons, limit=1)[0] if reasons else "Good candidate for review."
+
+
+def card_concern(row: pd.Series, profile: dict[str, Any]) -> str:
+    risks = family_concern_items(row, profile, limit=6)
+    unique = unique_signals(risks, limit=1)
+    return unique[0] if unique else "Verify photos and showing fit."
+
+
+def html_list(items: list[str], klass: str = "") -> str:
+    return "".join(f"<li>{escape(str(item))}</li>" for item in items)
 
 def marker_html(row: pd.Series) -> str:
     colors = {"green": ("#2f8f5b", "#17633d"), "yellow": ("#f2c94c", "#8a6a00"), "red": ("#dc6b57", "#9f351f")}
@@ -138,21 +197,21 @@ def app_map(df: pd.DataFrame):
         return None
     fmap = folium.Map(location=[mapped["Latitude"].mean(), mapped["Longitude"].mean()], zoom_start=12, tiles="CartoDB positron", control_scale=True)
     for _, row in mapped.iterrows():
-        reasons = why_it_may_work(row, {}, limit=1)
-        risk = family_concern_items(row, {}, limit=1)[0]
+        reason = card_strength(row, {})
+        risk = card_concern(row, {})
         html = f"""
-        <div style='font-family:Arial,sans-serif;width:260px;padding:4px;'>
-          <div style='font-weight:800;font-size:15px;margin-bottom:4px;'>{escape(title(row))}</div>
-          <div style='color:#17633d;font-weight:800;margin-bottom:6px;'>{money(row.get('price_numeric', row.get('Price')))} | Family Fit {score(row)}/100</div>
-          <div style='font-size:13px;margin-bottom:6px;'>{escape(fit_label(row))}</div>
-          <div style='font-size:12px;color:#34443b;'>+ {escape(reasons[0])}</div>
-          <div style='font-size:12px;color:#86451d;margin-top:4px;'>Check: {escape(risk)}</div>
+        <div style='font-family:Arial,sans-serif;width:250px;padding:6px;'>
+          <div style='font-weight:800;font-size:15px;margin-bottom:5px;color:#0f172a;'>{escape(title(row))}</div>
+          <div style='color:#17633d;font-weight:800;margin-bottom:6px;'>{money(row.get('price_numeric', row.get('Price')))} | {score(row)}/100</div>
+          <div style='font-size:12px;color:#34443b;margin-bottom:4px;'>+ {escape(reason)}</div>
+          <div style='font-size:12px;color:#86451d;margin-bottom:9px;'>! {escape(risk)}</div>
+          <div style='display:inline-block;background:#07915a;color:white;border-radius:999px;padding:7px 11px;font-weight:800;font-size:12px;'>View Review</div>
         </div>
         """
         folium.Marker(
             [row["Latitude"], row["Longitude"]],
             tooltip=f"{title(row)} - {score(row)}/100",
-            popup=folium.Popup(html, max_width=300),
+            popup=folium.Popup(html, max_width=290),
             icon=folium.DivIcon(html=marker_html(row), icon_size=(42, 42), icon_anchor=(21, 21)),
         ).add_to(fmap)
     legend_html = """
@@ -165,7 +224,6 @@ def app_map(df: pd.DataFrame):
     """
     fmap.get_root().html.add_child(folium.Element(legend_html))
     return fmap
-
 
 def clicked_address(df: pd.DataFrame, click: dict[str, Any] | None) -> str | None:
     if not click or df.empty:
@@ -234,22 +292,15 @@ def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
             unsafe_allow_html=True,
         )
         st.markdown(
-            f"<div class='listing-meta'>{escape(money(row.get('price_numeric', row.get('Price'))))}<br>"
+            f"<div class='listing-meta'>{escape(money(row.get('price_numeric', row.get('Price'))))} | "
             f"{escape(str(row.get('Bedrooms', '')))} bd | {escape(str(row.get('Bathrooms', '')))} ba | {escape(str(row.get('Size', '')))}</div>",
             unsafe_allow_html=True,
         )
-        fit_badge(row)
-        reasons = why_it_may_work(row, profile, limit=1)
-        risks = family_concern_items(row, profile, limit=1)
-        st.markdown(f"<div class='reason'>{escape(reasons[0])}</div>", unsafe_allow_html=True)
-        st.markdown(f"<div class='concern'>{escape(risks[0])}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='reason'>{escape(card_strength(row, profile))}</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='concern'>{escape(card_concern(row, profile))}</div>", unsafe_allow_html=True)
         if st.button("View Review", key=f"view_{key}", use_container_width=True):
             st.session_state["selected_address"] = str(row.get("Address", ""))
             st.rerun()
-        if st.button("Save", key=f"save_{key}", use_container_width=True):
-            append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
-            st.toast("Saved home")
-
 
 def render_listing_grid(visible: pd.DataFrame, profile: dict[str, Any], limit: int = 12) -> None:
     st.markdown("<div class='section-head'><div><div class='section-title'>Ranked Homes</div><div class='section-sub'>Best next-tour candidates based on the family profile.</div></div></div>", unsafe_allow_html=True)
@@ -298,12 +349,15 @@ def render_selected_home_review(row: pd.Series | None, visible: pd.DataFrame, pr
 
     evaluation = get_listing_evaluation(row, listing_preferences(profile), HOME_EVALUATION_CACHE_PATH, force=False, model=os.getenv("OPENAI_MODEL", "gpt-4o-mini"))
     scenarios = evaluation.get("family_fit_scenarios", {}) if isinstance(evaluation.get("family_fit_scenarios"), dict) else {}
-    strengths = evaluation.get("strengths", []) if isinstance(evaluation.get("strengths"), list) else []
-    risks = evaluation.get("tradeoffs_risks", []) if isinstance(evaluation.get("tradeoffs_risks"), list) else []
+    strengths_raw = evaluation.get("strengths", []) if isinstance(evaluation.get("strengths"), list) else []
+    risks_raw = evaluation.get("tradeoffs_risks", []) if isinstance(evaluation.get("tradeoffs_risks"), list) else []
+    strengths = unique_signals(strengths_raw + why_it_may_work(row, profile, limit=6), limit=4, skip_keys={"price_fit"})
     if not strengths:
-        strengths = why_it_may_work(row, profile, limit=4)
-    if not risks:
-        risks = family_concern_items(row, profile, limit=4)
+        strengths = unique_signals(strengths_raw + why_it_may_work(row, profile, limit=6), limit=4)
+    risks = unique_signals(risks_raw + family_concern_items(row, profile, limit=6), limit=4)
+    best_for = unique_signals(evaluation.get("best_for", []) if isinstance(evaluation.get("best_for"), list) else [], limit=3)
+    less_ideal = unique_signals(scenarios.get("less_ideal_if", []) if isinstance(scenarios.get("less_ideal_if", []), list) else [], limit=3)
+    summary = str(evaluation.get("overall_summary", row.get("explanation", "Review this home against the family profile."))).split("\n")[0]
 
     with st.container(border=True):
         st.markdown(
@@ -315,26 +369,19 @@ def render_selected_home_review(row: pd.Series | None, visible: pd.DataFrame, pr
               </div>
               <div style='text-align:right'>{score_badge(row)}<br><span class='fit-badge {tone(row)}'>{escape(fit_label(row))}</span></div>
             </div>
+            <div class='review-grid'>
+              <div class='insight-card wide'><div class='review-card-title'>Summary</div><p>{escape(summary)}</p></div>
+              <div class='insight-card'><div class='review-card-title'>Strengths</div><ul class='insight-list good'>{html_list(strengths)}</ul></div>
+              <div class='insight-card'><div class='review-card-title'>Risks</div><ul class='insight-list risk'>{html_list(risks)}</ul></div>
+              <div class='insight-card'><div class='review-card-title'>Best for</div><ul class='insight-list'>{html_list(best_for)}</ul></div>
+              <div class='insight-card'><div class='review-card-title'>Final recommendation</div><p>{escape(str(evaluation.get('ai_recommendation', fit_label(row))))}</p></div>
+            </div>
             """,
             unsafe_allow_html=True,
         )
-        st.markdown("<div class='review-card-title'>AI Summary</div>", unsafe_allow_html=True)
-        st.write(str(evaluation.get("overall_summary", row.get("explanation", "Review this home against the family profile."))).split("\n")[0])
-
-        left, right = st.columns(2, gap="large")
-        with left:
-            st.markdown("<div class='review-card-title'>Why this home is strong</div>", unsafe_allow_html=True)
-            bullets(strengths[:5], "good")
-        with right:
-            st.markdown("<div class='review-card-title'>What to verify / risks</div>", unsafe_allow_html=True)
-            bullets(risks[:5], "risk")
-
-        st.markdown("<div class='review-card-title'>Best for</div>", unsafe_allow_html=True)
-        bullets((evaluation.get("best_for", []) if isinstance(evaluation.get("best_for"), list) else [])[:3])
-        st.markdown("<div class='review-card-title'>Less ideal if</div>", unsafe_allow_html=True)
-        bullets(scenarios.get("less_ideal_if", [])[:3] if isinstance(scenarios.get("less_ideal_if", []), list) else [])
-        st.markdown(f"<div class='final-rec'>Final recommendation: {escape(str(evaluation.get('ai_recommendation', fit_label(row))))}</div>", unsafe_allow_html=True)
-
+        if less_ideal:
+            st.markdown("<div class='review-card-title' style='margin-top:12px;'>Less ideal if</div>", unsafe_allow_html=True)
+            bullets(less_ideal[:3], "risk")
         links = listing_links(row)
         link_parts = [f"[{name}]({url})" for name, url in links.items() if str(url).strip()]
         if link_parts:
@@ -351,9 +398,7 @@ def render_selected_home_review(row: pd.Series | None, visible: pd.DataFrame, pr
             st.write("Rule explanation:", row.get("explanation", "Not available"))
             st.write("Family-fit caps:", row.get("family_evaluation_note", "None"))
 
-
 def render_floating_chat(visible: pd.DataFrame, selected: pd.Series | None) -> None:
-    st.markdown("<div class='floating-chat-spacer'></div>", unsafe_allow_html=True)
     label = "Ask AI"
     with st.popover(label, use_container_width=False):
         selected_title = title(selected) if selected is not None else "the current search"
