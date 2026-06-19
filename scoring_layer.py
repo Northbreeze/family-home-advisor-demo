@@ -122,6 +122,10 @@ def col(df: pd.DataFrame, name: str, default: object = "") -> pd.Series:
         return df[name]
     return pd.Series(default, index=df.index)
 
+
+def compact_search_text(value: object) -> str:
+    return re.sub(r"[^a-z0-9]+", "", str(value).lower())
+
 def filter_ranked_data(scored: pd.DataFrame, search: str, price_range: tuple[int, int], locations: list[str], min_beds: int, min_school: float, yard: str, more: dict[str, bool]) -> pd.DataFrame:
     data = scored.copy()
     data = data[pd.to_numeric(data["price_numeric"], errors="coerce").between(price_range[0], price_range[1], inclusive="both")]
@@ -129,8 +133,18 @@ def filter_ranked_data(scored: pd.DataFrame, search: str, price_range: tuple[int
     data = data[pd.to_numeric(data["fraser_score_numeric"], errors="coerce").fillna(0) >= min_school]
     if search.strip():
         q = search.strip().lower()
-        text = (col(data, "Address", "").astype(str) + " " + col(data, "City", "").astype(str) + " " + col(data, "detected_area", "").astype(str) + " " + col(data, "final_school", "").astype(str)).str.lower()
-        data = data[text.str.contains(re.escape(q), na=False)]
+        q_compact = compact_search_text(q)
+        text = (
+            col(data, "Address", "").astype(str) + " "
+            + col(data, "City", "").astype(str) + " "
+            + col(data, "detected_area", "").astype(str) + " "
+            + col(data, "final_school", "").astype(str)
+        ).str.lower()
+        compact_text = text.map(compact_search_text)
+        mask = text.str.contains(re.escape(q), na=False)
+        if q_compact:
+            mask = mask | compact_text.str.contains(re.escape(q_compact), na=False)
+        data = data[mask]
     if locations:
         masks = []
         for loc in locations:

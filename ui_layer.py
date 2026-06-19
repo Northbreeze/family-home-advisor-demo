@@ -67,7 +67,6 @@ def inject_css() -> None:
         .floating-chat-spacer {height:0;}
         div[data-testid="stPopover"] {position:fixed!important;right:24px!important;bottom:24px!important;z-index:9999!important;}
         div[data-testid="stPopover"] > button {background:#07915a!important;color:#fff!important;border-radius:999px!important;padding:0.75rem 1.15rem!important;font-weight:900!important;box-shadow:0 14px 34px rgba(7,145,90,.28)!important;border:0!important;}
-        div[data-baseweb="popover"] > div {width:390px!important;max-height:72vh!important;overflow:auto!important;border-radius:18px!important;box-shadow:0 18px 48px rgba(15,45,30,.22)!important;border:1px solid #dbe8df!important;}
         .review-grid {display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px;}
         .insight-card {background:#fff;border:1px solid #e5ece7;border-radius:14px;padding:13px 14px;box-shadow:0 7px 18px rgba(18,52,34,.05);}
         .insight-card.wide {grid-column:1 / -1;}
@@ -180,6 +179,31 @@ def card_concern(row: pd.Series, profile: dict[str, Any]) -> str:
 
 def html_list(items: list[str], klass: str = "") -> str:
     return "".join(f"<li>{escape(str(item))}</li>" for item in items)
+
+
+def set_selected_home(row: pd.Series) -> None:
+    address = str(row.get("Address", "")).strip()
+    st.session_state["selected_address"] = address
+    st.session_state["selected_home"] = {
+        "Address": address,
+        "Listing URL": str(row.get("Listing URL", "")),
+        "match_score": score(row),
+    }
+    st.session_state["scroll_to_review"] = True
+
+
+def scroll_to_review_if_needed() -> None:
+    if not st.session_state.pop("scroll_to_review", False):
+        return
+    st.components.v1.html(
+        """
+        <script>
+        const el = window.parent.document.getElementById('selected-home-review');
+        if (el) { el.scrollIntoView({behavior: 'smooth', block: 'start'}); }
+        </script>
+        """,
+        height=0,
+    )
 
 def marker_html(row: pd.Series) -> str:
     colors = {"green": ("#2f8f5b", "#17633d"), "yellow": ("#f2c94c", "#8a6a00"), "red": ("#dc6b57", "#9f351f")}
@@ -298,9 +322,18 @@ def listing_card(row: pd.Series, profile: dict[str, Any], key: str) -> None:
         )
         st.markdown(f"<div class='reason'>{escape(card_strength(row, profile))}</div>", unsafe_allow_html=True)
         st.markdown(f"<div class='concern'>{escape(card_concern(row, profile))}</div>", unsafe_allow_html=True)
-        if st.button("View Review", key=f"view_{key}", use_container_width=True):
-            st.session_state["selected_address"] = str(row.get("Address", ""))
-            st.rerun()
+        actions = st.columns(2, gap="small")
+        with actions[0]:
+            if st.button("View Review", key=f"view_{key}", use_container_width=True):
+                set_selected_home(row)
+                st.rerun()
+        with actions[1]:
+            if st.button("Save", key=f"save_{key}", use_container_width=True):
+                saved = append_listing_event(LISTING_EVENTS_PATH, "Saved", str(row.get("Address", "")))
+                if saved:
+                    st.toast("Saved home")
+                else:
+                    st.warning("Could not save this home because the local saved-homes file is locked.")
 
 def render_listing_grid(visible: pd.DataFrame, profile: dict[str, Any], limit: int = 12) -> None:
     st.markdown("<div class='section-head'><div><div class='section-title'>Ranked Homes</div><div class='section-sub'>Best next-tour candidates based on the family profile.</div></div></div>", unsafe_allow_html=True)
@@ -316,9 +349,10 @@ def render_listing_grid(visible: pd.DataFrame, profile: dict[str, Any], limit: i
 def selected_row(df: pd.DataFrame) -> pd.Series | None:
     if df.empty:
         return None
-    selected = st.session_state.get("selected_address")
+    selected = st.session_state.get("selected_address") or st.session_state.get("selected_home", {}).get("Address")
     if selected:
-        match = df[df["Address"].astype(str).eq(str(selected))]
+        selected_text = str(selected).strip()
+        match = df[df["Address"].astype(str).str.strip().eq(selected_text)]
         if not match.empty:
             return match.iloc[0]
     return None
@@ -342,6 +376,8 @@ def listing_preferences(profile: dict[str, Any]) -> dict[str, Any]:
 
 
 def render_selected_home_review(row: pd.Series | None, visible: pd.DataFrame, profile: dict[str, Any]) -> None:
+    st.markdown("<div id='selected-home-review'></div>", unsafe_allow_html=True)
+    scroll_to_review_if_needed()
     st.markdown("<div class='section-head'><div><div class='section-title'>Selected Home Review</div><div class='section-sub'>Condensed AI buyer-agent view for deciding whether to tour.</div></div></div>", unsafe_allow_html=True)
     if row is None:
         st.info("Click a map pin or a View Review button to open a selected home review here.")

@@ -87,8 +87,7 @@ def load_listing_events(path: Path) -> pd.DataFrame:
     return events[EVENT_COLUMNS]
 
 
-def append_listing_event(path: Path, event_type: str, address: str, reason: str = "", details: str = "") -> None:
-    events = load_listing_events(path)
+def append_listing_event(path: Path, event_type: str, address: str, reason: str = "", details: str = "") -> bool:
     row = {
         "timestamp": datetime.now().isoformat(timespec="seconds"),
         "event_type": event_type,
@@ -96,7 +95,24 @@ def append_listing_event(path: Path, event_type: str, address: str, reason: str 
         "reason": reason,
         "details": details,
     }
-    pd.concat([events, pd.DataFrame([row])], ignore_index=True).to_csv(path, index=False)
+
+    def write_event(target: Path) -> None:
+        events = load_listing_events(target)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        pd.concat([events, pd.DataFrame([row])], ignore_index=True).to_csv(target, index=False)
+
+    try:
+        write_event(path)
+        return True
+    except PermissionError:
+        fallback = path.with_name(f"{path.stem}_pending.csv")
+        try:
+            write_event(fallback)
+            return True
+        except Exception:
+            return False
+    except Exception:
+        return False
 
 
 def recommendation_category(row: pd.Series) -> str:

@@ -24,6 +24,7 @@ from ui_layer import (
     render_selected_home_review,
     render_sidebar_profile,
     selected_row,
+    set_selected_home,
 )
 from v2_product import load_family_profile, load_listing_events
 
@@ -169,8 +170,10 @@ def main() -> None:
     else:
         map_data = st_folium(fmap, height=500, use_container_width=True, returned_objects=["last_object_clicked"], key="consumer_map")
         picked = clicked_address(visible, (map_data or {}).get("last_object_clicked"))
-        if picked:
-            st.session_state["selected_address"] = picked
+        if picked and picked != st.session_state.get("selected_address"):
+            match = visible[visible["Address"].astype(str).str.strip().eq(str(picked).strip())]
+            if not match.empty:
+                set_selected_home(match.iloc[0])
 
     selected_pool = scored
     selected = selected_row(selected_pool)
